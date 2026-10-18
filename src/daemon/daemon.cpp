@@ -5,8 +5,6 @@
 
 #include <aoahid_adb_proxy.h>
 
-#include <ctime>
-
 #include "paths.hpp"
 
 #include <algorithm>
