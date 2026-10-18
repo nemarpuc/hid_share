@@ -18,6 +18,7 @@ struct Mouse {
     // The strings the mouse announces; empty when it announces none.
     std::string manufacturer;
     std::string product;
+    std::string serial;
 };
 
 // Reads the mice that are plugged in now: pointing devices on a USB port,

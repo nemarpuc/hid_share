@@ -69,6 +69,7 @@ std::vector<Mouse> list_mice() {
         mouse.product_id = static_cast<uint16_t>(product);
         mouse.manufacturer = read_line(usb / "manufacturer");
         mouse.product = read_line(usb / "product");
+        mouse.serial = read_line(usb / "serial");
         // One mouse shows up as several input devices.
         const bool seen = std::any_of(mice.begin(), mice.end(), [&](const Mouse& each) {
             return each.vendor_id == mouse.vendor_id && each.product_id == mouse.product_id &&

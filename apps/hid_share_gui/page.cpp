@@ -277,17 +277,18 @@ void draw_copy_mouse(App& app, DeviceConfig& device) {
         std::snprintf(id, sizeof id, "0x%04x", mouse.product_id);
         const bool product = set_field(
             app, *find_config_key(KeyScope::device, "usb", "product_id"), &device, id);
-        // A string the mouse does not have is left for the user to type; one that
-        // cannot be taken keeps the parser's reason on its row.
-        const bool maker =
-            !mouse.manufacturer.empty() &&
-            set_field(app, *find_config_key(KeyScope::device, "usb", "manufacturer"), &device,
-                      mouse.manufacturer);
-        const bool name = !mouse.product.empty() &&
-                          set_field(app, *find_config_key(KeyScope::device, "usb", "product"),
-                                    &device, mouse.product);
-        app.failed = !(vendor && product && maker && name);
-        app.message = app.failed ? "Copied what could be; check the rows that are still empty."
+        // The board announces what the mouse does: a string the mouse does not
+        // have is taken off. One that cannot be taken keeps the parser's reason
+        // on its row.
+        const auto text = [&](const char* const name, const std::string& value) {
+            const ConfigKey& key = *find_config_key(KeyScope::device, "usb", name);
+            return value.empty() ? clear_field(app, key, &device) : set_field(app, key, &device, value);
+        };
+        const bool maker = text("manufacturer", mouse.manufacturer);
+        const bool name = text("product", mouse.product);
+        const bool serial = text("serial", mouse.serial);
+        app.failed = !(vendor && product && maker && name && serial);
+        app.message = app.failed ? "Copied what could be; the rows with a reason were refused."
                                  : "Copied. Apply, then disconnect and connect the board.";
     }
     ImGui::EndPopup();

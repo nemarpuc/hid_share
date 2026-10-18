@@ -15,8 +15,8 @@
   per target; the AOA code is unchanged in behaviour.
 - The settings window groups devices by link and has a Board (MIM) tab and a
   USB tab for boards.
-- The USB tab of a board can copy the ids and the two strings of a plugged-in
-  mouse (Linux).
+- The USB tab of a board can copy the ids and the strings (serial number
+  included) of a plugged-in mouse (Linux).
 - Builds need libmimhid 0.1 or newer as well as libaoahid; CI and release
   builds fetch it.
 
