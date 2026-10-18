@@ -190,7 +190,7 @@ report_rate_hz = max   ; or every | 10..8000
 kill_server = true     ; stop adb's server before a scan and when it holds a phone a proxy is to take
 
 [mim]
-X
+baud = 3000000         ; the serial speed of the boards' firmware; no default
 timeout_ms = 2000
 ```
 
