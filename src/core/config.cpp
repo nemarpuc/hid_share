@@ -407,6 +407,20 @@ bool to_usb_text(const std::string_view value, std::string& out) {
     return true;
 }
 
+// A current in mA, 1 to 500 (the most a USB 2.0 configuration may ask for).
+bool to_usb_power(const std::string_view value, uint16_t& out) noexcept {
+    if (value.empty()) {
+        out = 0;
+        return true;
+    }
+    unsigned parsed = 0;
+    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (error != std::errc() || end != value.data() + value.size() || parsed < 1 || parsed > 500)
+        return false;
+    out = static_cast<uint16_t>(parsed);
+    return true;
+}
+
 bool to_port_path(const std::string_view value, std::string& out) {
     if (value.size() > 255)
         return false;
@@ -454,6 +468,16 @@ bool set_usb(DeviceConfig& d, const std::string_view key, const std::string_view
         return to_usb_text(value, d.mim.serial);
     if (key == "serial_from_chip_id")
         return to_bool(value, d.mim.serial_from_chip_id);
+    if (key == "bcd_device")
+        return to_usb_id(value, d.mim.bcd_device);
+    if (key == "max_power_ma")
+        return to_usb_power(value, d.mim.max_power_ma);
+    if (key == "self_powered")
+        return to_bool(value, d.mim.self_powered);
+    if (key == "remote_wakeup")
+        return to_bool(value, d.mim.remote_wakeup);
+    if (key == "configuration")
+        return to_usb_text(value, d.mim.configuration);
     return false;
 }
 
@@ -1235,6 +1259,11 @@ std::string format_device(const DeviceConfig& d) {
         out.put("product", d.mim.product);
         out.put("serial", d.mim.serial);
         out.put("serial_from_chip_id", yes_no(d.mim.serial_from_chip_id));
+        out.put("bcd_device", usb_id_text(d.mim.bcd_device));
+        out.put("max_power_ma", d.mim.max_power_ma != 0 ? std::to_string(d.mim.max_power_ma) : "");
+        out.put("self_powered", yes_no(d.mim.self_powered));
+        out.put("remote_wakeup", yes_no(d.mim.remote_wakeup));
+        out.put("configuration", d.mim.configuration);
     }
     return out.text;
 }

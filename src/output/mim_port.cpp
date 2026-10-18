@@ -456,16 +456,16 @@ class MimBackend final : public Backend {
         device.keep_attached = 0U;
         device.vendor_id = mim.vendor_id;
         device.product_id = mim.product_id;
-        device.bcd_device = usb_bcd_device;
+        device.bcd_device = mim.bcd_device != 0 ? mim.bcd_device : usb_bcd_device;
         device.language_id = usb_language_id;
         device.manufacturer = mim.manufacturer.c_str();
         device.product = mim.product.c_str();
         device.serial = mim.serial.empty() ? nullptr : mim.serial.c_str();
-        device.configuration = nullptr;
+        device.configuration = mim.configuration.empty() ? nullptr : mim.configuration.c_str();
         device.serial_from_chip_id = mim.serial_from_chip_id ? 1U : 0U;
-        device.self_powered = 0U;
-        device.remote_wakeup = 0U;
-        device.max_power_ma = usb_max_power_ma;
+        device.self_powered = mim.self_powered ? 1U : 0U;
+        device.remote_wakeup = mim.remote_wakeup ? 1U : 0U;
+        device.max_power_ma = mim.max_power_ma != 0 ? mim.max_power_ma : usb_max_power_ma;
         device.log_level = MIMHID_LOG_DISABLED;
 
         mimhid_device* opened = nullptr;

@@ -162,6 +162,11 @@ DeviceConfig full_device() {
     d.mim.product = "board";
     d.mim.serial = "0001";
     d.mim.serial_from_chip_id = true;
+    d.mim.bcd_device = 0x0109;
+    d.mim.max_power_ma = 480;
+    d.mim.self_powered = true;
+    d.mim.remote_wakeup = true;
+    d.mim.configuration = "config";
     return d;
 }
 
@@ -217,6 +222,8 @@ TEST_CASE("every key in the table is accepted by the parser and read back") {
         {"adb.path", "/usr/bin/adb"},
         {"usb.vendor_id", "0x046d"},
         {"usb.product_id", "1234"},
+        {"usb.bcd_device", "0x0109"},
+        {"usb.max_power_ma", "480"},
         {"mim.baud", "921600"},
         {"mim.port", "/dev/ttyUSB1"},
         {"mim.timeout_ms", "500"},

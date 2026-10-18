@@ -219,6 +219,11 @@ LinkOptions link_options_for(const Config& config, const DeviceConfig& device) {
         options.mim.product = device.mim.product;
         options.mim.serial = device.mim.serial;
         options.mim.serial_from_chip_id = device.mim.serial_from_chip_id;
+        options.mim.bcd_device = device.mim.bcd_device;
+        options.mim.max_power_ma = device.mim.max_power_ma;
+        options.mim.self_powered = device.mim.self_powered;
+        options.mim.remote_wakeup = device.mim.remote_wakeup;
+        options.mim.configuration = device.mim.configuration;
     }
     return options;
 }

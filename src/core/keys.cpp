@@ -192,6 +192,16 @@ constexpr ConfigKey table[] = {
      "The serial number the board announces; empty announces none (unless serial_from_chip_id)."},
     {S::device, "usb", "serial_from_chip_id", "Board USB", K::boolean, "", "", "false",
      "Announce the board chip's own id as the serial number when serial is empty."},
+    {S::device, "usb", "bcd_device", "Board USB", K::text, "0x0001..0xFFFF", "", "",
+     "The device release number the board announces; empty announces 0x0100."},
+    {S::device, "usb", "max_power_ma", "Board USB", K::integer, "1..500", "mA", "",
+     "The current the board says it draws; empty announces 100."},
+    {S::device, "usb", "self_powered", "Board USB", K::boolean, "", "", "false",
+     "The board announces that it has a power supply of its own."},
+    {S::device, "usb", "remote_wakeup", "Board USB", K::boolean, "", "", "false",
+     "The board announces that it can wake its target."},
+    {S::device, "usb", "configuration", "Board USB", K::text, "at most 31 characters", "", "",
+     "The configuration string the board announces; empty announces none."},
 
     // device file [adb]
     {S::device, "adb", "proxy", "Adb", K::boolean, "", "", "false",

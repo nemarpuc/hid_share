@@ -41,6 +41,12 @@ struct MimOptions {
     // Empty leaves the serial number out unless serial_from_chip_id is set.
     std::string serial;
     bool serial_from_chip_id{};
+    // 0: the constants of the MIM backend.
+    uint16_t bcd_device{};
+    uint16_t max_power_ma{};
+    bool self_powered{};
+    bool remote_wakeup{};
+    std::string configuration;
 
     [[nodiscard]] bool operator==(const MimOptions&) const = default;
 };

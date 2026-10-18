@@ -253,43 +253,52 @@ void draw_hid_tab(App& app, DeviceConfig& device) {
     }
 }
 
-// Gives the board the identity of a mouse that is plugged in here: its ids and the two
-// strings it announces. The serial number is not copied.
+// Gives the board the identity of a mouse or touchscreen that is plugged in here: its ids
+// and everything else it announces.
 void draw_copy_mouse(App& app, DeviceConfig& device) {
-    if (ImGui::Button("Copy from a plugged-in mouse...")) {
+    if (ImGui::Button("Copy from a plugged-in mouse or touchscreen...")) {
         app.mice = list_mice();
         ImGui::OpenPopup("copy_mouse");
     }
     if (!ImGui::BeginPopup("copy_mouse"))
         return;
     if (app.mice.empty())
-        ImGui::TextUnformatted("No USB mouse found (this works on Linux only).");
+        ImGui::TextUnformatted("No USB mouse or touchscreen found (this works on Linux only).");
     for (const Mouse& mouse : app.mice) {
-        char label[160];
-        std::snprintf(label, sizeof label, "%s  (%04x:%04x)", mouse.name.c_str(), mouse.vendor_id,
-                      mouse.product_id);
+        char label[192];
+        std::snprintf(label, sizeof label, "%s: %s  (%04x:%04x)",
+                      mouse.kind == PointerKind::mouse ? "mouse" : "touchscreen",
+                      mouse.name.c_str(), mouse.vendor_id, mouse.product_id);
         if (!ImGui::Selectable(label))
             continue;
-        char id[16];
-        std::snprintf(id, sizeof id, "0x%04x", mouse.vendor_id);
-        const bool vendor = set_field(app, *find_config_key(KeyScope::device, "usb", "vendor_id"),
-                                      &device, id);
-        std::snprintf(id, sizeof id, "0x%04x", mouse.product_id);
-        const bool product = set_field(
-            app, *find_config_key(KeyScope::device, "usb", "product_id"), &device, id);
-        // The board announces what the mouse does: a string the mouse does not
-        // have is taken off. One that cannot be taken keeps the parser's reason
+        // What the device announces is what the board announces: a value it does
+        // not give is taken off. One that cannot be taken keeps the parser's reason
         // on its row.
-        const auto text = [&](const char* const name, const std::string& value) {
+        const auto put = [&](const char* const name, const std::string& value) {
             const ConfigKey& key = *find_config_key(KeyScope::device, "usb", name);
-            return value.empty() ? clear_field(app, key, &device) : set_field(app, key, &device, value);
+            return value.empty() ? clear_field(app, key, &device)
+                                 : set_field(app, key, &device, value);
         };
-        const bool maker = text("manufacturer", mouse.manufacturer);
-        const bool name = text("product", mouse.product);
-        const bool serial = text("serial", mouse.serial);
-        app.failed = !(vendor && product && maker && name && serial);
-        app.message = app.failed ? "Copied what could be; the rows with a reason were refused."
-                                 : "Copied. Apply, then disconnect and connect the board.";
+        const auto hex = [](const unsigned value) {
+            char text[16];
+            std::snprintf(text, sizeof text, "0x%04x", value);
+            return std::string(value != 0 ? text : "");
+        };
+        bool all = true;
+        all &= put("vendor_id", hex(mouse.vendor_id));
+        all &= put("product_id", hex(mouse.product_id));
+        all &= put("manufacturer", mouse.manufacturer);
+        all &= put("product", mouse.product);
+        all &= put("serial", mouse.serial);
+        all &= put("configuration", mouse.configuration);
+        all &= put("bcd_device", hex(mouse.bcd_device));
+        all &= put("max_power_ma",
+                   mouse.max_power_ma != 0 ? std::to_string(mouse.max_power_ma) : std::string());
+        all &= put("self_powered", mouse.self_powered ? "true" : "false");
+        all &= put("remote_wakeup", mouse.remote_wakeup ? "true" : "false");
+        app.failed = !all;
+        app.message = all ? "Copied. Apply, then disconnect and connect the board."
+                          : "Copied what could be; the rows with a reason were refused.";
     }
     ImGui::EndPopup();
 }
@@ -305,6 +314,11 @@ void draw_usb_tab(App& app, DeviceConfig& device) {
     draw_row(app, KeyScope::device, "usb", "serial", &device, "Serial number announced");
     draw_row(app, KeyScope::device, "usb", "serial_from_chip_id", &device,
              "Use the chip's id as the serial number");
+    draw_row(app, KeyScope::device, "usb", "configuration", &device, "Configuration string");
+    draw_row(app, KeyScope::device, "usb", "bcd_device", &device, "Device release (empty: 0x0100)");
+    draw_row(app, KeyScope::device, "usb", "max_power_ma", &device, "Current drawn (empty: 100)");
+    draw_row(app, KeyScope::device, "usb", "self_powered", &device, "Self powered");
+    draw_row(app, KeyScope::device, "usb", "remote_wakeup", &device, "Can wake the target");
     look::dim("A change here takes the board off its target and puts it back: apply it, then "
               "disconnect and connect the board.");
     draw_copy_mouse(app, device);

@@ -324,6 +324,10 @@ it.
 | `manufacturer`, `product` | empty | the strings it announces, printable ASCII, at most 31 characters |
 | `serial` | empty | the serial number it announces; empty announces none |
 | `serial_from_chip_id` | `false` | announce the chip's own id as the serial number when `serial` is empty |
+| `bcd_device` | empty | the device release number it announces, 0x0001 to 0xFFFF; empty announces 0x0100 |
+| `max_power_ma` | empty | the current it says it draws, 1 to 500 mA; empty announces 100 |
+| `self_powered`, `remote_wakeup` | `false` | the two bits of the configuration's attributes |
+| `configuration` | empty | the configuration string it announces; empty announces none |
 
 Adding or removing a Node (the mouse, keyboard, media keys or touchscreen) of
 an open board makes the board detach from its target and attach again, which

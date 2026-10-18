@@ -121,6 +121,13 @@ struct MimDevice {
     // Empty leaves the serial number out, unless serial_from_chip_id is set.
     std::string serial;
     bool serial_from_chip_id{};
+    // 0 when not set: the board announces 0x0100 and 100 mA.
+    uint16_t bcd_device{};
+    uint16_t max_power_ma{};
+    bool self_powered{};
+    bool remote_wakeup{};
+    // The configuration string; empty announces none.
+    std::string configuration;
 };
 
 // A device's own shortcuts ([keys] in its file); empty for none.
