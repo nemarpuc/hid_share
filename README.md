@@ -74,15 +74,16 @@ lists the ones that have a file, and the phones that are plugged in.
 says, and give your user access to the serial port. Then:
 
 1. In the settings window (`hid_share_gui`), Computer, **Board (MIM)** tab: enter
-   the serial speed (the one the firmware is built for) and the link timeout.
-   Neither has a default.
+   the link timeout. It has no default.
 2. Press **Find** at the top of the boards list (or `hid_share find_boards`). It
    sends a message to every serial port that could be a board, which is why it is
-   done only when asked, and not while a board is open. The board appears as
-   `+ ...`; pressing it adds it and tries to open it.
+   done only when asked; ports in use are passed over. It also measures the
+   fastest serial speed the board's adapter carries. The board appears as
+   `+ ...`; pressing it adds it with that speed and tries to open it.
 3. On its page, **USB** tab, enter the vendor id, product id and the two strings
-   the board announces to the other machine. None has a default and no maker's
-   name is assumed; the board is not opened until they are set. Then **Connect**.
+   the board announces to the other machine, or copy them from a plugged-in mouse
+   or touchscreen with the button there. None has a default and no maker's name
+   is assumed; the board is not opened until they are set. Then **Connect**.
 4. Set the other machine's size and gain (Screen tab), where it sits (Placement
    tab), and push the cursor through the edge.
 
@@ -258,9 +259,10 @@ shares a screen edge with your desktop's own edge features:
   against libmimhid's simulated board on a pseudo-terminal, on a virtual X
   server with no USB device visible: connect, mouse, buttons, keys, media keys and
   touch reach the board as reports; changing the set of inputs is one re-attach
-  and leaving it as it was is none; `find_boards` is refused while a board is
-  open. **Not run with a real board, a real firmware build or a real target
-  machine.** Not tested: how any game or program treats the input.
+  and leaving it as it was is none. libmimhid 1.0.1 itself was run against a
+  real RP2040 board with its firmware (open, limits, and a 4,000,000 baud link
+  through the serial adapter). **hid_share has not been run with a real board or
+  a real target machine.** Not tested: how any game or program treats the input.
 - **Real device, Arch Linux:** Galaxy Tab S11, Android 16. Corner reference,
   tracking, return, re-entry at a new height, sensitivity, the ADB proxy and the
   setup from adb were compared against the position Android itself reports and
@@ -281,7 +283,7 @@ shares a screen edge with your desktop's own edge features:
 
 ## Building
 
-Requires CMake 3.22, a C++20 compiler, libaoahid 1.0 or newer and libmimhid 0.1 or newer. On Linux each
+Requires CMake 3.22, a C++20 compiler, libaoahid 1.0 or newer and libmimhid 1.0 or newer. On Linux each
 backend is built when its libraries are found:
 
 | Backend | Packages (Debian names) |

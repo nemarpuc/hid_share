@@ -244,7 +244,7 @@ void find_boards(App& app) {
     app.message = app.failed ? (answer.rfind("error=", 0) == 0 ? answer.substr(6) : answer)
                              : "Searched the serial ports for boards.";
     poll_daemon(app);
-    // The search is refused while a board is open; the scan says so.
+    // A search that failed says so in the scan.
     const auto refused = app.status.find("scan_error");
     if (!app.failed && refused != app.status.end() &&
         refused->second.find("boards (MIM): ") != std::string::npos) {

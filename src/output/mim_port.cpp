@@ -21,7 +21,8 @@ namespace {
 
 // Every value below is this application's policy, stated explicitly rather
 // than left to libmimhid's documented fallbacks (docs/API.md there).
-constexpr uint32_t discover_timeout_ms = 500U;
+// The search waits this long for each answer, at each rate it tries.
+constexpr uint32_t discover_timeout_ms = 50U;
 constexpr uint32_t reconnect_timeout_ms = 3000U;
 constexpr uint32_t close_drain_timeout_ms = 1000U;
 constexpr uint32_t drain_deadline_ms = 600U;
@@ -384,20 +385,17 @@ class MimBackend final : public Backend {
     [[nodiscard]] std::vector<TargetInfo> scan(const ScanRequest& request,
                                                std::string& error) override {
         const std::vector<std::string> held = registry_->held();
-        if (request.probe_boards) {
-            if (!held.empty()) {
-                error = "a board is open: close it before looking for others";
-            } else {
-                probe(error);
-            }
-        }
+        // libmimhid opens a port for one user at a time, so the search passes
+        // over the boards that are open here.
+        if (request.probe_boards)
+            probe(error);
         // What is listed: the boards the last search found, the ports the user
         // named and the boards that are open, once each, where they exist.
         std::vector<Listed> all = found_;
         for (const std::string& path : request.board_ports)
-            all.push_back({path, {}});
+            all.push_back({path, {}, 0U});
         for (const std::string& path : held)
-            all.push_back({path, {}});
+            all.push_back({path, {}, 0U});
 
         listed_.clear();
         std::vector<TargetInfo> targets;
@@ -414,6 +412,7 @@ class MimBackend final : public Backend {
             info.serial = mim_serial_of(each.path);
             info.product = each.description;
             info.detail = each.path;
+            info.baud = each.baud;
             targets.push_back(std::move(info));
         }
         return targets;
@@ -487,6 +486,7 @@ class MimBackend final : public Backend {
     struct Listed {
         std::string path;
         std::string description;
+        uint32_t baud{};
     };
 
     // Sends a message to every serial port that could be a board and keeps the
@@ -508,7 +508,15 @@ class MimBackend final : public Backend {
             text += " (firmware " + std::to_string(info->version_major) + "." +
                     std::to_string(info->version_minor) + "." +
                     std::to_string(info->version_patch) + ")";
-            found_.push_back({info->port_name, std::move(text)});
+            // It answers, but cannot be opened until it is flashed again.
+            if (info->protocol_version != MIMHID_PROTOCOL_VERSION) {
+                text += ": flash the libmimhid " + std::to_string(MIMHID_VERSION_MAJOR) + "." +
+                        std::to_string(MIMHID_VERSION_MINOR) + "." +
+                        std::to_string(MIMHID_VERSION_PATCH) + " firmware";
+                found_.push_back({info->port_name, std::move(text), 0U});
+                continue;
+            }
+            found_.push_back({info->port_name, std::move(text), info->baud_rate});
         }
         mimhid_discovery_destroy(discovery);
     }

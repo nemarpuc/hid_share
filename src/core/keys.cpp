@@ -178,8 +178,9 @@ constexpr ConfigKey table[] = {
      "when the board is plugged in again, or COM3. The device's serial is made from its last "
      "part, so it is set when the device is added.", true},
     {S::device, "mim", "baud", "Board", K::integer, "1..4000000", "baud", "",
-     "The serial speed of this board. It must be the one the board's firmware is built for; "
-     "there is no default."},
+     "The serial line rate of this board, one of libmimhid's rates (115200 to 4000000). Adding "
+     "the board from Find boards writes the fastest rate the search saw the board and its serial "
+     "adapter carry; there is no default."},
     {S::device, "usb", "vendor_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",
      "The vendor id the board announces to its target; there is no default."},
     {S::device, "usb", "product_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",

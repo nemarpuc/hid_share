@@ -318,7 +318,7 @@ it.
 
 | Key | Default | |
 | --- | --- | --- |
-| `baud` | empty | the serial speed of this board, 1 to 4000000; it must be the one its firmware is built for (boards differ, so it is the board's own, not the computer's) |
+| `baud` | empty | the serial line rate of this board, one of libmimhid's rates (115200, 230400, 460800, 921600, 1000000, 1500000, 2000000, 3000000, 4000000). Adding the board from `find_boards` writes the fastest rate the search saw the board and its serial adapter carry; a rate they do not carry is refused when the board is opened. Boards differ, so it is the board's own, not the computer's |
 | `port` | empty | the board's serial port: `/dev/ttyUSB0`, a `/dev/serial/by-id/` path (it stays the same when the board is plugged in again) or `COM3`. The device's `serial` is `mim-` and the end of this, with anything a serial may not hold turned into `_`; a file whose serial is another is refused. It is set when the device is added and is not typed in the settings window |
 | `vendor_id`, `product_id` | empty | the ids the board announces to its target, 0x0001 to 0xFFFF |
 | `manufacturer`, `product` | empty | the strings it announces, printable ASCII, at most 31 characters |
@@ -378,7 +378,7 @@ was found), `config_error`, `capture_error`,
 | Command | |
 | --- | --- |
 | `status` | state, backend, monitors, configured devices and newly detected devices; see [Status](#status) |
-| `find_boards` | search the serial ports for boards that have no file, and list them as `new.<serial>`; refused while a board is open |
+| `find_boards` | search the serial ports for boards that have no file, measure the fastest line rate each one's serial adapter carries, and list them as `new.<serial>`; a port in use (by this program or another) is passed over |
 | `connect SERIAL\|NAME` | open a device. One that has a file is opened as it is; a plugged-in device that has none is given a file first (nothing is read from it). Nothing else is touched. The daemon opens no device by itself: not when it starts, not on `reload`, and not when a device that has a file shows up in a scan. A device that was connected by this command and drops out (unplugged, a glitch) is opened again when it comes back, until `disconnect` or `forget` |
 | `disconnect SERIAL\|NAME` | close a device and leave it closed |
 | `fill SERIAL\|NAME` | read a connected device through its ADB proxy (which has to be on) and write what it says into its file; nothing is closed or reopened |

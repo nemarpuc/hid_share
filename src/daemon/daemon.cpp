@@ -1864,8 +1864,12 @@ std::string Daemon::command(const std::string& line) {
                     // How it was found is how it is reached.
                     device.link = plugged->transport == Transport::mim ? LinkKind::mim
                                                                        : LinkKind::aoa;
-                    if (plugged->transport == Transport::mim)
+                    if (plugged->transport == Transport::mim) {
                         device.mim.port = plugged->detail;
+                        // The rate the search measured, unless one is already written.
+                        if (device.mim.baud == 0)
+                            device.mim.baud = plugged->baud;
+                    }
                     const std::string problem = validate_config(next);
                     if (!problem.empty()) {
                         answer = "error=" + problem;

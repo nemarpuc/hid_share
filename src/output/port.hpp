@@ -25,6 +25,9 @@ struct TargetInfo {
     // Where it is reached, when the serial does not say: a board's serial
     // port. Empty for a phone.
     std::string detail;
+    // The fastest line rate the search saw a board and its serial adapter
+    // carry; 0 when it was not measured.
+    uint32_t baud{};
 };
 
 // What a board (MIM) announces to its target and how its serial link is run.

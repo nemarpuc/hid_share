@@ -422,7 +422,8 @@ void draw_computer_page(App& app) {
         look::heading("Finding boards");
         look::dim("A board that has a file is opened on the port its file names, without "
                   "searching. Looking for others sends a message to every serial port that could "
-                  "be a board, so it is done only when you ask, and not while a board is open.");
+                  "be a board, so it is done only when you ask; ports in use are passed over. It "
+                  "also measures the fastest serial speed each board's adapter carries.");
         ImGui::BeginDisabled(!app.daemon_running);
         if (ImGui::Button("Find boards"))
             find_boards(app);
@@ -577,8 +578,8 @@ void draw_list(App& app) {
     if (ImGui::SmallButton("Find"))
         find_boards(app);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Search the serial ports for boards. Done only when asked, and not "
-                          "while a board is open.");
+        ImGui::SetTooltip("Search the serial ports for boards. Done only when asked; ports "
+                          "in use are passed over.");
     ImGui::PopID();
     for (const size_t index : boards)
         draw_device_row(app, index, false);

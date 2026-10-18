@@ -9,7 +9,8 @@
   `link = aoa|mim`; a file without it is not opened and its status asks for the
   line (add `link = aoa` to files from earlier versions).
 - New `[mim] timeout_ms` and, per board, `[mim]` (`port`, `baud`) / `[usb]` sections.
-  They have no defaults; boards differ in speed, so `baud` is each board's own. New `find_boards` command; a board is searched for
+  They have no defaults; boards differ in speed, so `baud` is each board's own, and
+  adding a board from `find_boards` writes the fastest rate the search measured. New `find_boards` command; a board is searched for
   only when asked, never while one is open. See `docs/CONFIG.md`.
 - The output side is split into a hub (queue, pacing, statistics) and one port
   per target; the AOA code is unchanged in behaviour.
@@ -19,8 +20,8 @@
   announces (ids, strings, serial number, release, current, power attributes;
   Linux). New `[usb]` keys: `bcd_device`, `max_power_ma`, `self_powered`,
   `remote_wakeup`, `configuration`.
-- Builds need libmimhid 0.1 or newer as well as libaoahid; CI and release
-  builds fetch it.
+- Builds need libmimhid 1.0 or newer as well as libaoahid; CI and release
+  builds fetch libmimhid 1.0.1 and libaoahid 1.0.1.
 
 ## 0.3.11
 
