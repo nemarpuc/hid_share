@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-#include "aoahid_share/geometry.hpp"
+#include "hid_share/geometry.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 Span edge_span(const Rect& rect, const Side side) noexcept {
@@ -179,4 +179,4 @@ std::string resolve_portal(const std::vector<Monitor>& monitors, const PortalReq
     return {};
 }
 
-} // namespace aoas
+} // namespace hids

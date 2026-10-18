@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace aoas {
+namespace hids {
 
 // Functions other threads hand to a poll() loop, and the pipe that wakes it.
 class TaskQueue {
@@ -65,4 +65,4 @@ class TaskQueue {
     std::vector<std::function<void()>> tasks_;
 };
 
-} // namespace aoas
+} // namespace hids

@@ -12,7 +12,7 @@
 #include <atomic>
 #include <mutex>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 constexpr UINT task_message = WM_APP + 1;
@@ -123,9 +123,9 @@ class WindowsCapture final : public Capture {
         WNDCLASSA window_class{};
         window_class.lpfnWndProc = window_proc;
         window_class.hInstance = GetModuleHandleA(nullptr);
-        window_class.lpszClassName = "aoahid_share";
+        window_class.lpszClassName = "hid_share";
         RegisterClassA(&window_class);
-        window_ = CreateWindowExA(0, "aoahid_share", "aoahid_share", WS_OVERLAPPED, 0, 0, 0, 0,
+        window_ = CreateWindowExA(0, "hid_share", "hid_share", WS_OVERLAPPED, 0, 0, 0, 0,
                                   nullptr, nullptr, window_class.hInstance, nullptr);
 
         // The hooks are called on this thread, from its message loop.
@@ -372,4 +372,4 @@ class WindowsCapture final : public Capture {
 
 std::unique_ptr<Capture> make_windows_capture() { return std::make_unique<WindowsCapture>(); }
 
-} // namespace aoas
+} // namespace hids

@@ -5,7 +5,7 @@
 #include <functional>
 #include <thread>
 
-namespace aoas {
+namespace hids {
 
 // Tells when a USB device came or went, so the daemon scans for phones then
 // and not on a timer: a scan sends a request to every device on the bus.
@@ -26,4 +26,4 @@ class UsbWatch {
     int stop_pipe_[2]{-1, -1};
 };
 
-} // namespace aoas
+} // namespace hids

@@ -13,7 +13,7 @@
 #include <cmath>
 #include <mutex>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 // A macOS virtual key code to its Keyboard-page usage; 0 where there is none.
@@ -321,4 +321,4 @@ class MacCapture final : public Capture {
 
 std::unique_ptr<Capture> make_macos_capture() { return std::make_unique<MacCapture>(); }
 
-} // namespace aoas
+} // namespace hids

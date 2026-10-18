@@ -3,7 +3,7 @@
 
 #include "process.hpp"
 
-#include "aoahid_share/accel_model.hpp"
+#include "hid_share/accel_model.hpp"
 
 #include <charconv>
 #include <chrono>
@@ -11,7 +11,7 @@
 #include <cstdlib>
 #include <thread>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 constexpr int command_timeout_ms = 4000;
@@ -328,4 +328,4 @@ PhoneFacts Adb::inspect(const uint16_t port) const {
     return facts;
 }
 
-} // namespace aoas
+} // namespace hids

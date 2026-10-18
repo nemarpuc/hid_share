@@ -2,9 +2,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "third_party/doctest.h"
 
-#include "aoahid_share/config.hpp"
-#include "aoahid_share/ini_edit.hpp"
-#include "aoahid_share/keys.hpp"
+#include "hid_share/config.hpp"
+#include "hid_share/ini_edit.hpp"
+#include "hid_share/keys.hpp"
 
 #include <fstream>
 #include <map>
@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 
-using namespace aoas;
+using namespace hids;
 
 namespace {
 
@@ -154,6 +154,14 @@ DeviceConfig full_device() {
     d.touch = TouchPatch{true, 100, 100, 250, 1U};
     d.adb_proxy = true;
     d.adb_port = 6555;
+    d.link = LinkKind::mim;
+    d.mim.port = "/dev/ttyUSB0";
+    d.mim.vendor_id = 0x1234;
+    d.mim.product_id = 0x5678;
+    d.mim.manufacturer = "maker";
+    d.mim.product = "board";
+    d.mim.serial = "0001";
+    d.mim.serial_from_chip_id = true;
     return d;
 }
 
@@ -207,6 +215,11 @@ TEST_CASE("every key in the table is accepted by the parser and read back") {
         {"placement.turn_input", "90"},
         {"placement.corner_margin", "10%"},
         {"adb.path", "/usr/bin/adb"},
+        {"usb.vendor_id", "0x046d"},
+        {"usb.product_id", "1234"},
+        {"mim.baud", "921600"},
+        {"mim.port", "/dev/ttyUSB1"},
+        {"mim.timeout_ms", "500"},
     };
     for (const ConfigKey& key : config_keys()) {
         const std::string id = std::string(key.section) + "." + key.key;
@@ -264,7 +277,7 @@ void collect_words(const std::string& text, std::set<std::string>& out) {
 } // namespace
 
 TEST_CASE("docs/CONFIG.md and the tables name the same keys") {
-    std::ifstream file(std::string(AOAHID_SHARE_DOCS_DIR) + "/CONFIG.md");
+    std::ifstream file(std::string(HID_SHARE_DOCS_DIR) + "/CONFIG.md");
     REQUIRE(file.good());
     // What the docs name in backticks before "## Commands": in the first cell
     // of a table row (a key's own row), and anywhere at all.
@@ -288,8 +301,10 @@ TEST_CASE("docs/CONFIG.md and the tables name the same keys") {
     // The docs write a numbered or serial-named key with a placeholder.
     known.insert("monitor.N");
     known.insert("new.<serial>");
+    known.insert("new_link.<serial>");
     known.erase("monitor.#");
     known.erase("new.#");
+    known.erase("new_link.#");
     // A row that names a key together with its section.
     const std::set<std::string> with_section = {"[mouse] enabled", "[keyboard] enabled",
                                                 "[media] enabled", "[touch] enabled"};
@@ -321,8 +336,10 @@ TEST_CASE("a key is found by its place, and the same name in two sections is tol
 TEST_CASE("only the keys that make no sense to type are read-only") {
     for (const ConfigKey& key : config_keys()) {
         const std::string id = std::string(key.section) + "." + key.key;
-        // The serial names the file; read_at is the day the values were read from adb.
-        const bool expected = id == "device.serial" || id == "detected.read_at";
+        // The serial names the file; link and the port are how the device was found, and
+        // the port makes the serial; read_at is the day the values were read from adb.
+        const bool expected = id == "device.serial" || id == "device.link" ||
+                              id == "mim.port" || id == "detected.read_at";
         CHECK_MESSAGE(key.read_only == expected, id);
     }
 }

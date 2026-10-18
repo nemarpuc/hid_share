@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-#include "aoahid_share/tracker.hpp"
+#include "hid_share/tracker.hpp"
 
 #include <algorithm>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 void advance(Interval& range, const int counts, const GainRange g, const int limit) noexcept {
@@ -27,4 +27,4 @@ void Tracker::sent(const Delta counts, const GainRange g) noexcept {
     advance(y_, counts.y, g, size_.h - 1);
 }
 
-} // namespace aoas
+} // namespace hids

@@ -10,7 +10,7 @@
 #include <filesystem>
 #endif
 
-namespace aoas {
+namespace hids {
 
 #ifdef __linux__
 
@@ -85,4 +85,4 @@ void UsbWatch::stop() {}
 
 #endif
 
-} // namespace aoas
+} // namespace hids

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-#include "aoahid_share/ini_edit.hpp"
+#include "hid_share/ini_edit.hpp"
 
 #include <algorithm>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 std::string_view trim(std::string_view text) {
@@ -87,4 +87,4 @@ std::string IniText::str() const {
     return text;
 }
 
-} // namespace aoas
+} // namespace hids

@@ -3,13 +3,13 @@
 
 #include <string>
 
-namespace aoas {
+namespace hids {
 
 // Where the settings, the daemon's own state and the control socket live
 // (docs/CONFIG.md). The directories are created on first use.
 //
 // settings_dir() is the "settings" folder next to the program, or a folder of
-// the user's own when that cannot be written to; AOAHID_SHARE_SETTINGS_DIR
+// the user's own when that cannot be written to; HID_SHARE_SETTINGS_DIR
 // names another. It holds config.ini, state.ini, daemon.log and device/.
 [[nodiscard]] std::string settings_dir();
 [[nodiscard]] std::string config_file_path();
@@ -28,4 +28,4 @@ namespace aoas {
 [[nodiscard]] std::string state_set(const std::string& text, const std::string& key,
                                     const std::string& value);
 
-} // namespace aoas
+} // namespace hids

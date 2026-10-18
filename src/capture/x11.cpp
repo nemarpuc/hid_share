@@ -17,7 +17,7 @@
 #include <cmath>
 #include <cstdlib>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 double fp3232(const xcb_input_fp3232_t value) noexcept {
@@ -436,4 +436,4 @@ class X11Capture final : public Capture {
 
 std::unique_ptr<Capture> make_x11_capture() { return std::make_unique<X11Capture>(); }
 
-} // namespace aoas
+} // namespace hids

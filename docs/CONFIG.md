@@ -3,7 +3,7 @@
 ## Files
 
 Everything is kept in one `settings` folder next to the programs
-(`aoahid_share`, `aoahid_share_daemon`, `aoahid_share_gui`), so a copy of the
+(`hid_share`, `hid_share_daemon`, `hid_share_gui`), so a copy of the
 folder is a portable install:
 
 ```text
@@ -16,16 +16,16 @@ settings/
 ```
 
 Where that folder cannot be used, the same four things are kept in the
-user's own folder instead: `$XDG_CONFIG_HOME/aoahid_share` (else
-`~/.config/aoahid_share`) on Linux, `%APPDATA%\aoahid_share` on Windows,
-`~/Library/Application Support/aoahid_share` on macOS. That is the case when the
+user's own folder instead: `$XDG_CONFIG_HOME/hid_share` (else
+`~/.config/hid_share`) on Linux, `%APPDATA%\hid_share` on Windows,
+`~/Library/Application Support/hid_share` on macOS. That is the case when the
 programs' folder cannot be written to (an installed copy under `/usr/bin` or
 `Program Files`), when the programs are inside an application bundle, and, on
 Linux and macOS, when `settings` is not this user's own or can be written to by
 others (the settings name the adb program to run, so a folder others can change
-is not trusted). `AOAHID_SHARE_SETTINGS_DIR` names another folder for all of it.
+is not trusted). `HID_SHARE_SETTINGS_DIR` names another folder for all of it.
 
-`aoahid_share paths` prints them. Each configured Android device has a file of
+`hid_share paths` prints them. Each configured Android device has a file of
 its own under `device/<serial>.ini`, created when you connect it.
 
 The daemon writes `daemon.log`, started over on each run: which backend it captures with, each device connecting or dropping,
@@ -45,7 +45,7 @@ The shortcuts are each device's own: see [`[keys]`](#keys).
 
 | Key | Default | |
 | --- | --- | --- |
-| `buttons` | `5` | 1 to 8; `aoahid_share buttons` reports what your mice have |
+| `buttons` | `5` | 1 to 8; `hid_share buttons` reports what your mice have |
 | `button_map` | empty | HID button for PC button 1, 2, ...; `1,3,2` swaps right and middle |
 | `[mouse] enabled` | `true` | `false` does not register the mouse on the device |
 | `[keyboard] enabled` | `true` | `false` does not register the keyboard on the device |
@@ -143,7 +143,7 @@ then is the phone's ADB interface served on `127.0.0.1:<port>`, and you run
 devices before it (files are taken in the order of their names) unless its
 file gives `port`; set `port` to keep one fixed.
 
-`fill` (the "Fill from ADB" button, or `aoahid_share fill DEVICE`) is the one
+`fill` (the "Fill from ADB" button, or `hid_share fill DEVICE`) is the one
 use of adb: with the proxy on, it runs `adb connect` to it, reads the
 resolution, rotation, physical size (`dumpsys display`), pointer speed and
 whether pointer acceleration is on, and writes them, with the gain they give
@@ -157,7 +157,7 @@ On Linux with a glibc older than 2.34, or musl, an adb server started by `adb
 connect` can keep the proxy's port bound after the daemon exits (the
 descriptor cannot be closed on `exec` there).
 
-`calibrate` (`aoahid_share calibrate [DEVICE]`) runs an interactive calibration
+`calibrate` (`hid_share calibrate [DEVICE]`) runs an interactive calibration
 wizard in the terminal without requiring ADB. It resets the cursor to the
 top-left corner, lets you move the cursor across the width and height using the
 Space key (tap for 1 count, hold for continuous motion, Backspace to step back,
@@ -166,9 +166,27 @@ Gain = 1.0, and Accel = off) based on the measured counts and screen rotation
 ([MATH.md](MATH.md#without-adb)). Upon confirmation, the dimensions are saved
 directly into the device's settings file and the daemon is reloaded.
 
+## `[mim]`
+
+How every microcontroller board (a device with `link = mim`) is reached over
+its serial port. Neither value has a default: a board is not opened while one
+is missing, and its status names it.
+
+| Key | Default | |
+| --- | --- | --- |
+| `baud` | empty | the serial speed, 1 to 4000000; it must be the one the board's firmware is built for |
+| `timeout_ms` | empty | how long the serial link waits for a board's answer, 1 to 60000 |
+
+The ports of the devices that have a file are opened as they are, without
+searching for anything. Boards that have no file are found only when asked
+for (`find_boards`, the "Find boards" button), because the search sends a
+message to every serial port that could be one. It is not made while a board
+is open, as the message would reach the running link.
+
 ## Per-device files (`device/<serial>.ini`)
 
-Each configured device has its own file named after its USB serial number
+Each configured device has its own file named after its serial number: a
+phone's USB serial, or, for a board, `mim-` and the end of its serial port
 (letters, digits, `-`, `_`, `.`; at most 64). A key left out takes the global
 value where there is one, else is not set: the daemon then says in the
 device's status what is missing, and does not guess it. A value is written as
@@ -179,7 +197,8 @@ reads as not set).
 
 | Key | Default | |
 | --- | --- | --- |
-| `serial` | empty | USB serial number; a profile that names none is filed as `unassigned N.ini` until a device takes it |
+| `serial` | empty | the serial the file is named after; a profile that names none is filed as `unassigned N.ini` until a device takes it |
+| `link` | empty | `aoa` for a phone, `mim` for a microcontroller board. It is set when the device is added and has no default: without it the device's status says it is missing |
 | `name` | empty | display name, at most 48 bytes, without `=`, `;`, `#`; it may not be another device's serial |
 | `enabled` | `true` | `false` keeps the device configured but left alone |
 
@@ -211,7 +230,7 @@ A `switch` or media key may not be any other key of any device. `lock` and
 input.
 
 The lock is for a game that takes the mouse: no edge sends the input back.
-It ends with the lock key, a `switch` key, `aoahid_share release` or `pause`,
+It ends with the lock key, a `switch` key, `hid_share release` or `pause`,
 or when the input is taken back for another reason: the device is closed, or
 another device or a monitor comes or goes. It is not kept: a device starts
 unlocked.
@@ -219,7 +238,7 @@ unlocked.
 "Anywhere" needs a backend that sees the keyboard while the input is on the
 computer (`local_hotkeys=yes` in `status`). On `portal` and `layer_shell` these
 keys work only while the input is on a device; bind a desktop shortcut to
-`aoahid_share enter NAME` or `aoahid_share media play_pause NAME` instead.
+`hid_share enter NAME` or `hid_share media play_pause NAME` instead.
 
 Until 0.3.4 the hotkeys were in `config.ini` and in the `[device]` section.
 Those keys are still read, and dropped: set the keys again here.
@@ -291,6 +310,28 @@ A running device has the touchscreen registered or removed on `reload`, as for
 the mouse, keyboard and media keys; a change of the device's `width` or
 `height` registers it again with the new size.
 
+### `[mim]` and `[usb]` (a board)
+
+Written for a device with `link = mim`, and read for no other. None of the
+`[usb]` values has a default (no maker's name is assumed): the board is not
+opened while one of the first four is missing, and the device's status names
+it.
+
+| Key | Default | |
+| --- | --- | --- |
+| `port` | empty | the board's serial port: `/dev/ttyUSB0`, a `/dev/serial/by-id/` path (it stays the same when the board is plugged in again) or `COM3`. The device's `serial` is `mim-` and the end of this, with anything a serial may not hold turned into `_`; a file whose serial is another is refused. It is set when the device is added and is not typed in the settings window |
+| `vendor_id`, `product_id` | empty | the ids the board announces to its target, 0x0001 to 0xFFFF |
+| `manufacturer`, `product` | empty | the strings it announces, printable ASCII, at most 31 characters |
+| `serial` | empty | the serial number it announces; empty announces none |
+| `serial_from_chip_id` | `false` | announce the chip's own id as the serial number when `serial` is empty |
+
+Adding or removing a Node (the mouse, keyboard, media keys or touchscreen) of
+an open board makes the board detach from its target and attach again, which
+the target sees as unplugging and plugging in a device. All the changes of one
+`reload` are made in one such step, and a set that has not changed makes none.
+A board has no ADB interface: `proxy = true` on it is refused, and `fill` is
+for phones.
+
 ### `[adb]` (device override)
 
 | Key | Default | |
@@ -300,14 +341,14 @@ the mouse, keyboard and media keys; a change of the device's `width` or
 
 ## Status
 
-`aoahid_share status` prints `key=value` lines. It is answered from a snapshot
+`hid_share status` prints `key=value` lines. It is answered from a snapshot
 the daemon keeps, so asking never holds up the input. Per device the keys are
 `device.<serial>.<key>`:
 
 | Key | Meaning |
 | --- | --- |
 | `name`, `state`, `status`, `fill`, `reading` | what it is called; `ready`, `error` or `absent`; why it is not ready; the last "fill"; a fill is under way |
-| `serial`, `proxy` | its serial; the proxy port or `off` |
+| `serial`, `link`, `proxy` | its serial; `aoa` or `mim`; the proxy port or `off` |
 | `wanted`, `plugged` | `yes` when `connect` was asked for it and has not been undone; `yes` when the last scan saw it plugged in |
 | `locked` | `yes` while its lock key holds the input on it; only for a device that is open |
 | `size`, `rotation`, `density` | the values in use: pixels, degrees, Android pixels per millimetre |
@@ -321,17 +362,19 @@ the daemon keeps, so asking never holds up the input. Per device the keys are
 
 Top level: `protocol` (the version of this format), `state` (`pc`, `android`,
 `paused`, `starting`), `active`, `last_used`, `backend`,
-`local_hotkeys`, `monitor.N`, `new.<serial>`, `config_error`, `capture_error`,
-`files_version`.
+`local_hotkeys`, `monitor.N`, `new.<serial>`, `new_link.<serial>` (`aoa` or `mim`: how it
+was found), `config_error`, `capture_error`,
+`scan_error`, `files_version`.
 
 ## Commands
 
-`aoahid_share <command>` talks to the daemon over a Unix socket in
+`hid_share <command>` talks to the daemon over a Unix socket in
 `$XDG_RUNTIME_DIR` (a named pipe on Windows) that only the same user can open.
 
 | Command | |
 | --- | --- |
 | `status` | state, backend, monitors, configured devices and newly detected devices; see [Status](#status) |
+| `find_boards` | search the serial ports for boards that have no file, and list them as `new.<serial>`; refused while a board is open |
 | `connect SERIAL\|NAME` | open a device. One that has a file is opened as it is; a plugged-in device that has none is given a file first (nothing is read from it). Nothing else is touched. The daemon opens no device by itself: not when it starts, not on `reload`, and not when a device that has a file shows up in a scan. A device that was connected by this command and drops out (unplugged, a glitch) is opened again when it comes back, until `disconnect` or `forget` |
 | `disconnect SERIAL\|NAME` | close a device and leave it closed |
 | `fill SERIAL\|NAME` | read a connected device through its ADB proxy (which has to be on) and write what it says into its file; nothing is closed or reopened |

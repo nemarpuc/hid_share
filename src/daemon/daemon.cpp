@@ -27,7 +27,7 @@
 #include <windows.h>
 #endif
 
-namespace aoas {
+namespace hids {
 namespace {
 
 // A Node rejects or drops the first reports after it opens (libaoahid
@@ -115,7 +115,7 @@ void write_later(std::function<void()> job) {
 }
 
 void log_line(const std::string& text) {
-    std::fprintf(stderr, "aoahid_share: %s\n", text.c_str());
+    std::fprintf(stderr, "hid_share: %s\n", text.c_str());
     write_later([text] {
         std::ofstream file(log_file(), std::ios::app);
         file << text << "\n";
@@ -209,7 +209,32 @@ LinkOptions link_options_for(const Config& config, const DeviceConfig& device) {
     // Node, and status says so (touch_state()).
     options.touch = touch_of(config, device).enabled && device.width >= 2 && device.height >= 2;
     options.touch_size = {device.width, device.height};
+    // Only a board has these; a phone's must not change when they do.
+    if (device.link == LinkKind::mim) {
+        options.mim.baud = config.mim.baud;
+        options.mim.timeout_ms = config.mim.timeout_ms;
+        options.mim.vendor_id = device.mim.vendor_id;
+        options.mim.product_id = device.mim.product_id;
+        options.mim.manufacturer = device.mim.manufacturer;
+        options.mim.product = device.mim.product;
+        options.mim.serial = device.mim.serial;
+        options.mim.serial_from_chip_id = device.mim.serial_from_chip_id;
+    }
     return options;
+}
+
+Transport transport_of(const LinkKind link) noexcept {
+    return link == LinkKind::mim ? Transport::mim : Transport::aoa;
+}
+
+// Why a device cannot be opened whatever else is true of it; empty when it
+// can. Nothing is guessed in place of a value that was not given.
+std::string unopenable(const DeviceConfig& device) {
+    if (device.link == LinkKind::unset)
+        return "link is not set: add link = aoa (a phone) or link = mim (a board) to its file";
+    if (device.link == LinkKind::mim && device.mim.port.empty())
+        return "the board's port is not set";
+    return {};
 }
 
 // What status says about touch.
@@ -331,7 +356,8 @@ void Daemon::rebuild_phones() {
             if (old == nullptr || old->link < 0 || !device.enabled || device.serial.empty() ||
                 old->serial != device.serial || old->port != port ||
                 old->wants_proxy != device.adb_proxy ||
-                old->link_options.buttons != options.buttons)
+                old->link_options.buttons != options.buttons ||
+                old->config.link != device.link || !(old->link_options.mim == options.mim))
                 continue;
             phone = std::move(old);
             break;
@@ -343,16 +369,18 @@ void Daemon::rebuild_phones() {
         // A phone that stays open is paced as the new files say, and has the
         // Nodes the files name.
         if (phone->link >= 0) {
-            usb_.set_nodes(phone->link, options);
+            hub_.set_nodes(phone->link, options);
             phone->link_options = options;
             const ReportRate rate = report_rate_of(config_, device);
-            usb_.set_rate(phone->link, rate.hz, rate.every);
+            hub_.set_rate(phone->link, rate.hz, rate.every);
         }
         if (phone->link < 0) {
             if (!device.enabled)
                 phone->status = "disabled";
             else if (device.serial.empty())
                 phone->status = "waits for a device: connect one to give it this profile";
+            else if (!unopenable(device).empty())
+                phone->status = unopenable(device);
         }
         phones_.push_back(std::move(phone));
     }
@@ -428,7 +456,7 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
     static_cast<void>(read_file(state_file_path(), state_));
     last_used_ = state_get(state_, "last_used");
 
-    std::string error = usb_.start();
+    std::string error = hub_.start();
     if (!error.empty()) {
         log_line(error);
         return 1;
@@ -441,7 +469,7 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
     if (!start_capture(std::move(capture), false)) {
         if (injected)
             return 1;
-        usb_.stop();
+        hub_.stop();
         return 0;
     }
     log_line(std::string("capturing input with ") + capture_->name());
@@ -520,7 +548,7 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
         any_proxy = any_proxy || phone->proxy;
         close_phone(*phone);
     }
-    usb_.stop();
+    hub_.stop();
     // adb claims a phone only when it first appears, so its server has to
     // start over to see the phones this process served. Only done when one
     // was: adb is not otherwise touched.
@@ -543,7 +571,7 @@ void Daemon::quit() {
 
 void Daemon::close_phone(Phone& phone) {
     if (phone.link >= 0) {
-        usb_.close(phone.link);
+        hub_.close(phone.link);
     }
     phone.link = -1;
     phone.proxy = phone.wants_proxy = false;
@@ -612,13 +640,16 @@ void Daemon::device_loop() {
         on_capture([&] {
             for (size_t index = 0; index < phones_.size(); ++index) {
                 Phone& phone = *phones_[index];
-                if (phone.link >= 0 && !usb_.alive(phone.link)) {
-                    drop(index, usb_.failure(phone.link));
+                if (phone.link >= 0)
+                    hub_.check(phone.link);
+                if (phone.link >= 0 && !hub_.alive(phone.link)) {
+                    drop(index, hub_.failure(phone.link));
                     dropped = true;
                 }
                 if (phone.link >= 0)
                     claimed.push_back(phone.serial);
                 else if (phone.config.enabled && !phone.config.serial.empty() &&
+                         unopenable(phone.config).empty() &&
                          wanted_.count(phone.config.serial) != 0)
                     missing.push_back({index, phone.config, phone.port, generation_});
             }
@@ -640,7 +671,15 @@ void Daemon::device_loop() {
         stop_adb = false;
 
         std::string error;
-        const std::vector<PhoneInfo> found = usb_.scan(error);
+        // The ports of the boards that have a file are listed as they are;
+        // looking for others is done when asked for.
+        ScanRequest request;
+        request.probe_boards = probe_boards_.exchange(false);
+        for (const DeviceConfig& device : config.devices) {
+            if (device.enabled && device.link == LinkKind::mim && !device.mim.port.empty())
+                request.board_ports.push_back(device.mim.port);
+        }
+        const std::vector<TargetInfo> found = hub_.scan(request, error);
 
         on_capture([&] {
             for (size_t index = 0; index < phones_.size(); ++index) {
@@ -648,7 +687,7 @@ void Daemon::device_loop() {
                 if (phone.link >= 0) {
                     const bool still_present = std::any_of(
                         found.begin(), found.end(),
-                        [&](const PhoneInfo& info) { return info.serial == phone.serial; });
+                        [&](const TargetInfo& info) { return info.serial == phone.serial; });
                     if (!still_present)
                         drop(index, "unplugged");
                 }
@@ -660,6 +699,7 @@ void Daemon::device_loop() {
                 if (phone.link >= 0) {
                     claimed.push_back(phone.serial);
                 } else if (phone.config.enabled && !phone.config.serial.empty() &&
+                           unopenable(phone.config).empty() &&
                            wanted_.count(phone.config.serial) != 0) {
                     missing.push_back({index, phone.config, phone.port, generation_});
                 }
@@ -670,6 +710,7 @@ void Daemon::device_loop() {
             for (size_t index = 0; index < found.size(); ++index) {
                 const std::string& serial = found[index].serial;
                 if (serial != entry.device.serial ||
+                    found[index].transport != transport_of(entry.device.link) ||
                     std::find(claimed.begin(), claimed.end(), serial) != claimed.end())
                     continue;
                 claimed.push_back(serial);
@@ -682,8 +723,8 @@ void Daemon::device_loop() {
         }
         // What is plugged in but has no file: shown, and left alone until
         // it is connected by hand.
-        std::vector<PhoneInfo> unknown;
-        for (const PhoneInfo& info : found) {
+        std::vector<TargetInfo> unknown;
+        for (const TargetInfo& info : found) {
             const bool known = std::any_of(
                 config.devices.begin(), config.devices.end(),
                 [&](const DeviceConfig& device) { return device.serial == info.serial; });
@@ -692,9 +733,10 @@ void Daemon::device_loop() {
         }
         on_capture([&] {
             plugged_.clear();
-            for (const PhoneInfo& info : found)
+            for (const TargetInfo& info : found)
                 plugged_.insert(info.serial);
             new_ = std::move(unknown);
+            scan_error_ = error;
             publish_status();
         });
         {
@@ -715,10 +757,10 @@ Daemon::Opened Daemon::open_phone(const size_t phone, const size_t scan_index, c
     const LinkOptions options = link_options_for(config, device);
     opened.options = options;
     opened.wants_proxy = device.adb_proxy;
-    opened.link = usb_.open(scan_index, options, opened.note);
+    opened.link = hub_.open(scan_index, options, opened.note);
     if (opened.link >= 0) {
         const ReportRate rate = report_rate_of(config, device);
-        usb_.set_rate(opened.link, rate.hz, rate.every);
+        hub_.set_rate(opened.link, rate.hz, rate.every);
     }
     // The proxy is on only for a device it was switched on for by hand.
     if (opened.link < 0 || !device.adb_proxy)
@@ -726,14 +768,14 @@ Daemon::Opened Daemon::open_phone(const size_t phone, const size_t scan_index, c
 
     bool held = false;
     bool absent = false;
-    int code = usb_.start_proxy(opened.link, port, held, absent);
+    int code = hub_.start_proxy(opened.link, port, held, absent);
     if (code != 0 && held && config.adb_kill_server) {
         // The adb server took the interface when the phone appeared. It lets
         // go a moment after it ends.
         Adb(config.adb_path).kill_server();
         for (int attempt = 0; attempt < proxy_retries && code != 0 && held; ++attempt) {
             std::this_thread::sleep_for(proxy_retry_step);
-            code = usb_.start_proxy(opened.link, port, held, absent);
+            code = hub_.start_proxy(opened.link, port, held, absent);
         }
     }
     if (code != 0) {
@@ -762,7 +804,7 @@ void Daemon::install(Opened opened) {
                          phones_[opened.phone]->link < 0;
     if (!current) {
         if (opened.link >= 0)
-            usb_.close(opened.link);
+            hub_.close(opened.link);
         return;
     }
     Phone& phone = *phones_[opened.phone];
@@ -777,7 +819,7 @@ void Daemon::install(Opened opened) {
     phone.wants_proxy = opened.wants_proxy;
     phone.status = opened.note;
     phone.note = opened.note;
-    phone.session = std::make_unique<Session>(usb_.sink(phone.link));
+    phone.session = std::make_unique<Session>(hub_.sink(phone.link));
     phone.session->set_position_cell(phone.cell.get());
     phone.ready_at = now() + settle_seconds;
     relayout();
@@ -821,7 +863,9 @@ bool Daemon::measure(Phone& phone) {
         lack("accel");
     if (!missing.empty()) {
         phone.status = "not set: " + missing +
-                       ". Enter them, or turn the ADB proxy on for it and fill them from adb";
+                       (device.link == LinkKind::mim
+                            ? ". Enter them (Screen and Placement tabs)"
+                            : ". Enter them, or turn the ADB proxy on for it and fill them from adb");
         return false;
     }
     phone.natural = {device.width, device.height};
@@ -1124,6 +1168,8 @@ std::string Daemon::start_fill(const size_t index) {
     Phone& phone = *phones_[index];
     if (phone.link < 0)
         return "error=the device is not connected";
+    if (phone.config.link == LinkKind::mim)
+        return "error=fill reads a phone through adb; a board's target is not read";
     if (!phone.proxy)
         return "error=turn the ADB proxy on for this device first, then apply";
     if (fill_running_.load())
@@ -1194,7 +1240,7 @@ bool Daemon::edge_hit(const uint32_t barrier, const int t, const double push,
         return false;
     Phone& phone = *phones_[barrier - 1];
     const double time = now();
-    if (!phone.layout_ok || !usb_.alive(phone.link) || time < phone.ready_at)
+    if (!phone.layout_ok || !hub_.alive(phone.link) || time < phone.ready_at)
         return false;
     if (!phone.session->edge_hit(t, push, button_down, time))
         return false;
@@ -1261,7 +1307,7 @@ void Daemon::hop(const size_t from, const size_t to) {
     Phone& here = *phones_[from];
     Phone& there = *phones_[to];
     // Not ready: its edge stays a wall.
-    if (!there.layout_ok || !usb_.alive(there.link))
+    if (!there.layout_ok || !hub_.alive(there.link))
         return;
     Side edge = Side::left;
     double along = 0.0;
@@ -1393,7 +1439,7 @@ size_t Daemon::usual_phone() const {
 bool Daemon::send_media(const size_t phone, const uint16_t usage, const bool down) {
     if (phone >= phones_.size() || phones_[phone]->link < 0)
         return false;
-    usb_.sink(phones_[phone]->link).media(usage, down);
+    hub_.sink(phones_[phone]->link).media(usage, down);
     return true;
 }
 
@@ -1432,7 +1478,7 @@ std::string Daemon::enter_by_command(const size_t index) {
     Phone& phone = *phones_[index];
     if (active_ == static_cast<int>(index))
         return "ok";
-    if (!phone.layout_ok || !usb_.alive(phone.link))
+    if (!phone.layout_ok || !hub_.alive(phone.link))
         return "error=the device is not ready";
     locked_ = false;
     if (active_ >= 0) {
@@ -1468,6 +1514,8 @@ void Daemon::publish_status() {
         out << "config_error=" << one_line(config_error_) << "\n";
     if (!capture_error_.empty())
         out << "capture_error=" << one_line(capture_error_) << "\n";
+    if (!scan_error_.empty())
+        out << "scan_error=" << one_line(scan_error_) << "\n";
     out << "local_hotkeys=" << (capture_->sees_local_keys() ? "yes" : "no") << "\n";
     for (size_t index = 0; index < monitors_.size(); ++index) {
         const Monitor& monitor = monitors_[index];
@@ -1476,8 +1524,11 @@ void Daemon::publish_status() {
             << monitor.width_mm << " " << monitor.height_mm << "\n";
     }
     // What is plugged in and has no file yet.
-    for (const PhoneInfo& info : new_)
+    for (const TargetInfo& info : new_) {
         out << "new." << one_line(info.serial) << "=" << one_line(info.product) << "\n";
+        out << "new_link." << one_line(info.serial) << "="
+            << (info.transport == Transport::mim ? "mim" : "aoa") << "\n";
+    }
     view->head = out.str();
     view->fill_serial = fill_serial_;
 
@@ -1497,6 +1548,11 @@ void Daemon::publish_status() {
                                                                 : "error";
             lines << prefix << "name=" << one_line(label_of(phone->config)) << "\n";
             lines << prefix << "state=" << stage << "\n";
+            lines << prefix << "link="
+                  << (phone->config.link == LinkKind::mim   ? "mim"
+                      : phone->config.link == LinkKind::aoa ? "aoa"
+                                                            : "")
+                  << "\n";
             lines << prefix << "wanted=" << (wanted_.count(entry.serial) != 0 ? "yes" : "no")
                   << "\n";
             lines << prefix << "plugged=" << (plugged_.count(entry.serial) != 0 ? "yes" : "no")
@@ -1574,7 +1630,7 @@ std::string Daemon::render_status() {
         out << phone.lines;
         if (phone.link < 0)
             continue;
-        const LinkStats stats = usb_.stats(phone.link);
+        const LinkStats stats = hub_.stats(phone.link);
         out << prefix << "locked=" << (&phone == held ? "yes" : "no") << "\n";
         out << prefix << "reports=" << stats.reports << "\n";
         out << prefix << "merged=" << stats.merged << "\n";
@@ -1738,7 +1794,7 @@ std::string Daemon::command(const std::string& line) {
                        std::abs(counts.y) > probe_reach) {
                 answer = "error=probe DEVICE corner | probe DEVICE move DX DY";
             } else {
-                usb_.sink(phone->link).jump(counts);
+                hub_.sink(phone->link).jump(counts);
                 // The cursor is no longer where the session left it.
                 if (phone->session != nullptr)
                     phone->session->resync();
@@ -1752,7 +1808,7 @@ std::string Daemon::command(const std::string& line) {
                 answer = "error=that device is not connected";
             } else {
                 answer = "ok\n";
-                for (const std::string& line : usb_.trace(phones_[index]->link))
+                for (const std::string& line : hub_.trace(phones_[index]->link))
                     answer += line + "\n";
             }
         } else if (verb == "connect") {
@@ -1777,7 +1833,7 @@ std::string Daemon::command(const std::string& line) {
             } else {
                 const auto plugged =
                     std::find_if(new_.begin(), new_.end(),
-                                 [&](const PhoneInfo& info) { return info.serial == name; });
+                                 [&](const TargetInfo& info) { return info.serial == name; });
                 if (!valid_serial(name)) {
                     // It names a file: nothing but a plain serial gets that far.
                     answer = "error=connect SERIAL|NAME";
@@ -1800,6 +1856,11 @@ std::string Daemon::command(const std::string& line) {
                     DeviceConfig& device = next.devices[index];
                     device.serial = name;
                     device.enabled = true;
+                    // How it was found is how it is reached.
+                    device.link = plugged->transport == Transport::mim ? LinkKind::mim
+                                                                       : LinkKind::aoa;
+                    if (plugged->transport == Transport::mim)
+                        device.mim.port = plugged->detail;
                     const std::string problem = validate_config(next);
                     if (!problem.empty()) {
                         answer = "error=" + problem;
@@ -1851,6 +1912,10 @@ std::string Daemon::command(const std::string& line) {
                 }
                 answer = save_store(next) ? reload() : "error=the config could not be written";
             }
+        } else if (verb == "find_boards") {
+            probe_boards_.store(true);
+            rescan_now();
+            answer = "ok";
         } else if (verb == "rescan") {
             rescan_now();
             answer = "ok";
@@ -1863,9 +1928,10 @@ std::string Daemon::command(const std::string& line) {
     // What these commands change is seen by the next status: the phone they
     // free or take shows as new or as known once it has been scanned for.
     if (answer == "ok" &&
-        (verb == "rescan" || verb == "connect" || verb == "forget" || verb == "reload"))
+        (verb == "rescan" || verb == "find_boards" || verb == "connect" || verb == "forget" ||
+         verb == "reload"))
         wait_scanned();
     return answer;
 }
 
-} // namespace aoas
+} // namespace hids

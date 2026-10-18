@@ -18,7 +18,7 @@
 #include <cmath>
 #include <cstring>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 constexpr const char* portal_name = "org.freedesktop.portal.Desktop";
@@ -396,7 +396,7 @@ class PortalCapture final : public Capture {
     void post(std::function<void()> task) override { tasks_.post(std::move(task)); }
 
   private:
-    std::string next_token() { return "aoahid_share_" + std::to_string(++token_counter_); }
+    std::string next_token() { return "hid_share_" + std::to_string(++token_counter_); }
 
     DBusMessage* method(const char* name) const {
         return dbus_message_new_method_call(portal_name, portal_path, capture_interface, name);
@@ -615,7 +615,7 @@ class PortalCapture final : public Capture {
             return "the portal returned no input event connection";
 
         ei_ = ei_new_receiver(nullptr);
-        ei_configure_name(ei_, "aoahid_share");
+        ei_configure_name(ei_, "hid_share");
         // libei owns the descriptor from here on.
         if (ei_setup_backend_fd(ei_, fd) != 0)
             return "libei could not use the input event connection";
@@ -873,4 +873,4 @@ class PortalCapture final : public Capture {
 
 std::unique_ptr<Capture> make_portal_capture() { return std::make_unique<PortalCapture>(); }
 
-} // namespace aoas
+} // namespace hids

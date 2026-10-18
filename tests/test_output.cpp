@@ -12,7 +12,7 @@
 #include <filesystem>
 #include <fstream>
 
-using namespace aoas;
+using namespace hids;
 
 namespace {
 
@@ -31,8 +31,8 @@ std::string write_fake_adb(const std::filesystem::path& folder, const std::strin
 // that, before anything is removed.
 std::filesystem::path test_settings_folder() {
     const std::filesystem::path folder =
-        std::filesystem::temp_directory_path() / "aoahid_share_test_settings";
-    setenv("AOAHID_SHARE_SETTINGS_DIR", folder.c_str(), 1);
+        std::filesystem::temp_directory_path() / "hid_share_test_settings";
+    setenv("HID_SHARE_SETTINGS_DIR", folder.c_str(), 1);
     REQUIRE(settings_dir() == folder.string());
     return folder;
 }
@@ -88,7 +88,7 @@ TEST_CASE("wm size may have spaces around the x") {
 
 TEST_CASE("connect waits for a phone that is offline at first") {
     const std::filesystem::path folder =
-        std::filesystem::temp_directory_path() / "aoahid_share_test_adb_offline";
+        std::filesystem::temp_directory_path() / "hid_share_test_adb_offline";
     std::filesystem::remove_all(folder);
     const Adb adb(write_fake_adb(folder,
                                  "case \"$1\" in\n"
@@ -104,7 +104,7 @@ TEST_CASE("connect waits for a phone that is offline at first") {
 
 TEST_CASE("connect tells whether it made the connection, and ends one that never worked") {
     const std::filesystem::path folder =
-        std::filesystem::temp_directory_path() / "aoahid_share_test_adb_created";
+        std::filesystem::temp_directory_path() / "hid_share_test_adb_created";
     std::filesystem::remove_all(folder);
     // The fake records every command it is run with.
     const Adb fresh(write_fake_adb(folder, "echo \"$*\" >> \"$0.log\"\n"
@@ -140,7 +140,7 @@ TEST_CASE("connect tells whether it made the connection, and ends one that never
 
 TEST_CASE("connect says why it failed") {
     const std::filesystem::path folder =
-        std::filesystem::temp_directory_path() / "aoahid_share_test_adb_refused";
+        std::filesystem::temp_directory_path() / "hid_share_test_adb_refused";
     std::filesystem::remove_all(folder);
     const Adb refused(write_fake_adb(
         folder, "echo \"failed to connect to '127.0.0.1:6555': Connection refused\"\n"));
@@ -165,7 +165,7 @@ TEST_CASE("connect says why it failed") {
 
 TEST_CASE("inspect reads what the phone says and invents nothing") {
     const std::filesystem::path folder =
-        std::filesystem::temp_directory_path() / "aoahid_share_test_adb_inspect";
+        std::filesystem::temp_directory_path() / "hid_share_test_adb_inspect";
     std::filesystem::remove_all(folder);
     // No mCurrentOrientation in this phone's dumpsys: the rotation stays
     // unknown (-1), and the logical density is not taken as the physical one.

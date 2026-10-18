@@ -19,7 +19,7 @@
 #include <cerrno>
 #include <filesystem>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 // How often new devices (a mouse plugged in later) are looked for.
@@ -260,4 +260,4 @@ class EvdevCapture final : public Capture {
 
 std::unique_ptr<Capture> make_evdev_capture() { return std::make_unique<EvdevCapture>(); }
 
-} // namespace aoas
+} // namespace hids

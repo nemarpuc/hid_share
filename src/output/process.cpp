@@ -17,7 +17,7 @@
 extern char** environ;
 #endif
 
-namespace aoas {
+namespace hids {
 
 #ifdef _WIN32
 
@@ -314,4 +314,4 @@ void reap_detached() noexcept {
 
 #endif
 
-} // namespace aoas
+} // namespace hids

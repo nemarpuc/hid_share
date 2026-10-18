@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-#include "aoahid_share/session.hpp"
+#include "hid_share/session.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 // Entry reports leave back to back; this stands in for the time between them
@@ -431,4 +431,4 @@ int Session::leave() {
     return back;
 }
 
-} // namespace aoas
+} // namespace hids

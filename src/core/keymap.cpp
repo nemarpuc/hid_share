@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-#include "aoahid_share/keymap.hpp"
+#include "hid_share/keymap.hpp"
 
 #include <array>
 #include <cctype>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 struct Entry {
@@ -195,4 +195,4 @@ bool parse_hotkey(const std::string_view text, Hotkey& out) noexcept {
     return true;
 }
 
-} // namespace aoas
+} // namespace hids

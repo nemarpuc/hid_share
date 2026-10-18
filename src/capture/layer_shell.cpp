@@ -31,7 +31,7 @@
 // members a newer libwayland adds after that are meant to stay null.
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 
-namespace aoas {
+namespace hids {
 namespace {
 
 // Scroll distance a wheel notch is reported as.
@@ -129,7 +129,7 @@ class LayerShellCapture final : public Capture {
             edge->surface = wl_compositor_create_surface(compositor_);
             edge->layer = zwlr_layer_shell_v1_get_layer_surface(
                 layer_shell_, edge->surface, output.output, ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY,
-                "aoahid_share");
+                "hid_share");
             uint32_t anchor = 0;
             const int length = barrier.span.length();
             if (vertical(barrier.side)) {
@@ -358,7 +358,7 @@ class LayerShellCapture final : public Capture {
     wl_buffer* transparent_buffer(const int width, const int height) {
         const int stride = width * 4;
         const int size = stride * height;
-        const int fd = memfd_create("aoahid_share", MFD_CLOEXEC);
+        const int fd = memfd_create("hid_share", MFD_CLOEXEC);
         if (fd < 0)
             return nullptr;
         if (ftruncate(fd, size) != 0) {
@@ -572,4 +572,4 @@ std::unique_ptr<Capture> make_layer_shell_capture() {
     return std::make_unique<LayerShellCapture>();
 }
 
-} // namespace aoas
+} // namespace hids

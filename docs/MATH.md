@@ -1,6 +1,6 @@
 # The arithmetic
 
-Android gives a USB mouse no way to ask where the cursor is. aoahid_share
+Android gives a USB mouse no way to ask where the cursor is. hid_share
 therefore keeps its own account of the position: it puts the cursor at a known
 point once, then adds up everything it sends. This file is that account, in
 the order the code applies it (`src/core/`).

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-#include "aoahid_share/config.hpp"
+#include "hid_share/config.hpp"
 
-#include "aoahid_share/accel_model.hpp"
+#include "hid_share/accel_model.hpp"
 
-#include "aoahid_share/keymap.hpp"
+#include "hid_share/keymap.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -12,7 +12,7 @@
 #include <cstdlib>
 #include <utility>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 std::string_view trim(std::string_view text) noexcept {
@@ -359,6 +359,112 @@ bool set_adb(Config& c, const std::string_view key, const std::string_view value
     return false;
 }
 
+// The board's serial link, for every board. Empty is a value not given.
+bool set_mim_link(Config& c, const std::string_view key, const std::string_view value) {
+    int number = 0;
+    if (key == "baud") {
+        if (!value.empty() && !to_int(value, 1, 4000000, number))
+            return false;
+        c.mim.baud = static_cast<uint32_t>(value.empty() ? 0 : number);
+        return true;
+    }
+    if (key == "timeout_ms") {
+        if (!value.empty() && !to_int(value, 1, 60000, number))
+            return false;
+        c.mim.timeout_ms = static_cast<uint32_t>(value.empty() ? 0 : number);
+        return true;
+    }
+    return false;
+}
+
+// A USB id: decimal, or hex after 0x. Empty is a value not given.
+bool to_usb_id(const std::string_view value, uint16_t& out) noexcept {
+    if (value.empty()) {
+        out = 0;
+        return true;
+    }
+    unsigned parsed = 0;
+    const bool hex = value.size() > 2 && value[0] == '0' && (value[1] == 'x' || value[1] == 'X');
+    const std::string_view digits = hex ? value.substr(2) : value;
+    const auto [end, error] =
+        std::from_chars(digits.data(), digits.data() + digits.size(), parsed, hex ? 16 : 10);
+    if (error != std::errc() || end != digits.data() + digits.size() || parsed < 1 || parsed > 0xFFFF)
+        return false;
+    out = static_cast<uint16_t>(parsed);
+    return true;
+}
+
+// A string the board announces: printable ASCII, at most 31 characters, and
+// none that starts a comment in the file.
+bool to_usb_text(const std::string_view value, std::string& out) {
+    if (value.size() > 31)
+        return false;
+    for (const char c : value) {
+        if (c < 0x20 || c > 0x7E || c == ';' || c == '#')
+            return false;
+    }
+    out = value;
+    return true;
+}
+
+bool to_port_path(const std::string_view value, std::string& out) {
+    if (value.size() > 255)
+        return false;
+    for (const char c : value) {
+        if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F || c == ';' || c == '#')
+            return false;
+    }
+    out = value;
+    return true;
+}
+
+bool to_link(const std::string_view value, LinkKind& out) noexcept {
+    if (value.empty()) {
+        out = LinkKind::unset;
+    } else if (value == "aoa") {
+        out = LinkKind::aoa;
+    } else if (value == "mim") {
+        out = LinkKind::mim;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+const char* link_name(const LinkKind link) noexcept {
+    return link == LinkKind::aoa ? "aoa" : link == LinkKind::mim ? "mim" : "";
+}
+
+bool set_mim_device(DeviceConfig& d, const std::string_view key, const std::string_view value) {
+    if (key == "port")
+        return to_port_path(value, d.mim.port);
+    return false;
+}
+
+bool set_usb(DeviceConfig& d, const std::string_view key, const std::string_view value) {
+    if (key == "vendor_id")
+        return to_usb_id(value, d.mim.vendor_id);
+    if (key == "product_id")
+        return to_usb_id(value, d.mim.product_id);
+    if (key == "manufacturer")
+        return to_usb_text(value, d.mim.manufacturer);
+    if (key == "product")
+        return to_usb_text(value, d.mim.product);
+    if (key == "serial")
+        return to_usb_text(value, d.mim.serial);
+    if (key == "serial_from_chip_id")
+        return to_bool(value, d.mim.serial_from_chip_id);
+    return false;
+}
+
+std::string usb_id_text(const uint16_t id) {
+    if (id == 0)
+        return {};
+    char buffer[8];
+    std::snprintf(buffer, sizeof buffer, "0x%04x", id);
+    return buffer;
+}
+
 bool set_auto_int(const std::string_view value, const int low, const int high, const int unset,
                   int& out) noexcept {
     // Empty is a value not given.
@@ -611,6 +717,22 @@ bool valid_serial(const std::string_view text) noexcept {
     return true;
 }
 
+std::string mim_serial_of(const std::string_view port) {
+    if (port.empty())
+        return {};
+    const size_t cut = port.find_last_of("/\\");
+    std::string name(cut == std::string_view::npos ? port : port.substr(cut + 1));
+    for (char& each : name) {
+        const bool plain = (each >= '0' && each <= '9') || (each >= 'A' && each <= 'Z') ||
+                           (each >= 'a' && each <= 'z') || each == '-' || each == '_' || each == '.';
+        if (!plain)
+            each = '_';
+    }
+    if (name.size() > 60)
+        name.resize(60);
+    return "mim-" + name;
+}
+
 bool valid_name(const std::string_view text) noexcept {
     if (text.size() > 48)
         return false;
@@ -753,7 +875,7 @@ size_t find_device(const Config& config, const std::string_view name_or_serial) 
 
 std::string parse_globals(const std::string_view text, Config& out) {
     Config config;
-    enum class Section { daemon, mouse, keyboard, media, touch, motion, adb };
+    enum class Section { daemon, mouse, keyboard, media, touch, motion, adb, mim };
     Section section = Section::daemon;
     const std::string error = read_ini(
         text,
@@ -772,6 +894,8 @@ std::string parse_globals(const std::string_view text, Config& out) {
                 section = Section::motion;
             } else if (name == "adb") {
                 section = Section::adb;
+            } else if (name == "mim") {
+                section = Section::mim;
             } else {
                 return "unknown section [" + std::string(name) + "]";
             }
@@ -807,6 +931,8 @@ std::string parse_globals(const std::string_view text, Config& out) {
                 return set_global_motion(config, key, value);
             case Section::adb:
                 return set_adb(config, key, value);
+            case Section::mim:
+                return set_mim_link(config, key, value);
             }
             return false;
         });
@@ -855,6 +981,10 @@ std::string format_globals(const Config& c) {
     out.put("kill_server", yes_no(c.adb_kill_server));
     out.put("path", c.adb_path);
     out.put("first_port", std::to_string(c.adb_first_port));
+
+    out.section("mim");
+    out.put("baud", c.mim.baud == 0 ? "" : std::to_string(c.mim.baud));
+    out.put("timeout_ms", c.mim.timeout_ms == 0 ? "" : std::to_string(c.mim.timeout_ms));
     return out.text;
 }
 
@@ -870,7 +1000,9 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
         keyboard,
         media,
         touch,
-        adb
+        adb,
+        mim,
+        usb
     };
     Section section = Section::device;
     const auto set_optional = [](const std::string_view value, std::optional<bool>& slot) {
@@ -903,6 +1035,10 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
                 section = Section::touch;
             else if (name == "adb")
                 section = Section::adb;
+            else if (name == "mim")
+                section = Section::mim;
+            else if (name == "usb")
+                section = Section::usb;
             else
                 return "unknown section [" + std::string(name) + "]";
             return {};
@@ -916,6 +1052,8 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
                     return to_name(value, device.name);
                 if (key == "enabled")
                     return to_bool(value, device.enabled);
+                if (key == "link")
+                    return to_link(value, device.link);
                 // Read and dropped: [keys] switch since 0.3.5.
                 return key == "hotkey";
             case Section::keys:
@@ -950,6 +1088,10 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
                 if (key == "proxy")
                     return to_bool(value, device.adb_proxy);
                 return false;
+            case Section::mim:
+                return set_mim_device(device, key, value);
+            case Section::usb:
+                return set_usb(device, key, value);
             }
             return false;
         });
@@ -972,6 +1114,7 @@ std::string format_device(const DeviceConfig& d) {
     out.put("serial", d.serial);
     out.put("name", d.name);
     out.put("enabled", yes_no(d.enabled));
+    out.put("link", link_name(d.link));
 
     out.section("keys");
     out.put("switch", d.keys.switch_key);
@@ -1081,6 +1224,18 @@ std::string format_device(const DeviceConfig& d) {
         if (d.adb_port != 0)
             out.put("port", std::to_string(d.adb_port));
     }
+    // A board's own values; written whole so a row can be filled in.
+    if (d.link == LinkKind::mim) {
+        out.section("mim");
+        out.put("port", d.mim.port);
+        out.section("usb");
+        out.put("vendor_id", usb_id_text(d.mim.vendor_id));
+        out.put("product_id", usb_id_text(d.mim.product_id));
+        out.put("manufacturer", d.mim.manufacturer);
+        out.put("product", d.mim.product);
+        out.put("serial", d.mim.serial);
+        out.put("serial_from_chip_id", yes_no(d.mim.serial_from_chip_id));
+    }
     return out.text;
 }
 
@@ -1150,6 +1305,24 @@ std::string validate_config(const Config& config) {
             if (adb_port_of(config, a) == adb_port_of(config, b))
                 return label_of(devices[a]) + " and " + label_of(devices[b]) +
                        " use the same adb port";
+        }
+    }
+
+    // A board is known by its serial port, and serves no ADB.
+    for (size_t a = 0; a < devices.size(); ++a) {
+        if (devices[a].link != LinkKind::mim)
+            continue;
+        if (devices[a].adb_proxy)
+            return label_of(devices[a]) + " is a board: the ADB proxy is for phones";
+        if (devices[a].mim.port.empty())
+            continue;
+        if (devices[a].serial != mim_serial_of(devices[a].mim.port))
+            return label_of(devices[a]) + " is on " + devices[a].mim.port + ", so its serial is " +
+                   mim_serial_of(devices[a].mim.port);
+        for (size_t b = a + 1; b < devices.size(); ++b) {
+            if (devices[b].link == LinkKind::mim && devices[b].mim.port == devices[a].mim.port)
+                return label_of(devices[a]) + " and " + label_of(devices[b]) + " use the port " +
+                       devices[a].mim.port;
         }
     }
 
@@ -1231,4 +1404,4 @@ bool keep_local_adb(Config& imported, const Config& local) {
     return changed;
 }
 
-} // namespace aoas
+} // namespace hids

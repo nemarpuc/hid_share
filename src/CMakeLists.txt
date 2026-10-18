@@ -1,4 +1,4 @@
-add_library(aoahid_share_core STATIC
+add_library(hid_share_core STATIC
   core/accel_model.cpp
   core/config.cpp
   core/geometry.cpp
@@ -8,25 +8,27 @@ add_library(aoahid_share_core STATIC
   core/session.cpp
   core/tracker.cpp
 )
-target_include_directories(aoahid_share_core PUBLIC "${PROJECT_SOURCE_DIR}/include")
-aoahid_share_warnings(aoahid_share_core)
+target_include_directories(hid_share_core PUBLIC "${PROJECT_SOURCE_DIR}/include")
+hid_share_warnings(hid_share_core)
 
-add_library(aoahid_share_output STATIC
+add_library(hid_share_output STATIC
   output/adb.cpp
   output/process.cpp
-  output/usb.cpp
+  output/aoa_port.cpp
+  output/hub.cpp
+  output/mim_port.cpp
 )
-target_include_directories(aoahid_share_output PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/output")
-target_link_libraries(aoahid_share_output PUBLIC aoahid_share_core aoahid_share_proxy
-                                                 aoahid::aoahid Threads::Threads)
-aoahid_share_warnings(aoahid_share_output)
+target_include_directories(hid_share_output PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/output")
+target_link_libraries(hid_share_output PUBLIC hid_share_core hid_share_proxy
+                                                 aoahid::aoahid mimhid::mimhid Threads::Threads)
+hid_share_warnings(hid_share_output)
 
 # --- Input capture: one backend per way of taking the keyboard and mouse ---
 
-add_library(aoahid_share_capture STATIC capture/factory.cpp)
-target_include_directories(aoahid_share_capture PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/capture")
-target_link_libraries(aoahid_share_capture PUBLIC aoahid_share_core Threads::Threads)
-aoahid_share_warnings(aoahid_share_capture)
+add_library(hid_share_capture STATIC capture/factory.cpp)
+target_include_directories(hid_share_capture PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/capture")
+target_link_libraries(hid_share_capture PUBLIC hid_share_core Threads::Threads)
+hid_share_warnings(hid_share_capture)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   find_package(PkgConfig REQUIRED)
@@ -58,76 +60,76 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       list(APPEND protocol_sources "${protocol_dir}/${protocol}-protocol.c"
                                    "${protocol_dir}/${protocol}-client-protocol.h")
     endforeach()
-    add_library(aoahid_share_wayland STATIC ${protocol_sources} capture/wayland_outputs.cpp)
-    target_include_directories(aoahid_share_wayland PUBLIC "${protocol_dir}"
+    add_library(hid_share_wayland STATIC ${protocol_sources} capture/wayland_outputs.cpp)
+    target_include_directories(hid_share_wayland PUBLIC "${protocol_dir}"
                                                            "${CMAKE_CURRENT_SOURCE_DIR}/capture")
-    target_link_libraries(aoahid_share_wayland PUBLIC aoahid_share_core PkgConfig::WAYLAND_CLIENT)
-    set(AOAHID_SHARE_HAVE_WAYLAND ON)
+    target_link_libraries(hid_share_wayland PUBLIC hid_share_core PkgConfig::WAYLAND_CLIENT)
+    set(HID_SHARE_HAVE_WAYLAND ON)
   endif()
 
   # evdev needs only kernel headers.
-  target_sources(aoahid_share_capture PRIVATE capture/evdev.cpp)
-  target_compile_definitions(aoahid_share_capture PRIVATE AOAHID_SHARE_HAVE_EVDEV)
+  target_sources(hid_share_capture PRIVATE capture/evdev.cpp)
+  target_compile_definitions(hid_share_capture PRIVATE HID_SHARE_HAVE_EVDEV)
 
   pkg_check_modules(XCB IMPORTED_TARGET xcb xcb-xfixes xcb-xinput xcb-randr)
   if(XCB_FOUND)
-    target_sources(aoahid_share_capture PRIVATE capture/x11.cpp)
-    target_link_libraries(aoahid_share_capture PRIVATE PkgConfig::XCB)
-    target_compile_definitions(aoahid_share_capture PRIVATE AOAHID_SHARE_HAVE_X11)
-    message(STATUS "aoahid_share: x11 backend enabled")
+    target_sources(hid_share_capture PRIVATE capture/x11.cpp)
+    target_link_libraries(hid_share_capture PRIVATE PkgConfig::XCB)
+    target_compile_definitions(hid_share_capture PRIVATE HID_SHARE_HAVE_X11)
+    message(STATUS "hid_share: x11 backend enabled")
   else()
-    message(STATUS "aoahid_share: x11 backend disabled (needs xcb, xcb-xfixes, xcb-xinput, xcb-randr)")
+    message(STATUS "hid_share: x11 backend disabled (needs xcb, xcb-xfixes, xcb-xinput, xcb-randr)")
   endif()
 
-  if(AOAHID_SHARE_HAVE_WAYLAND)
-    target_sources(aoahid_share_capture PRIVATE capture/layer_shell.cpp)
-    target_link_libraries(aoahid_share_capture PRIVATE aoahid_share_wayland)
-    target_compile_definitions(aoahid_share_capture PRIVATE AOAHID_SHARE_HAVE_LAYER_SHELL)
-    message(STATUS "aoahid_share: layer_shell backend enabled")
+  if(HID_SHARE_HAVE_WAYLAND)
+    target_sources(hid_share_capture PRIVATE capture/layer_shell.cpp)
+    target_link_libraries(hid_share_capture PRIVATE hid_share_wayland)
+    target_compile_definitions(hid_share_capture PRIVATE HID_SHARE_HAVE_LAYER_SHELL)
+    message(STATUS "hid_share: layer_shell backend enabled")
   else()
-    message(STATUS "aoahid_share: layer_shell backend disabled (needs wayland-client, wayland-scanner)")
+    message(STATUS "hid_share: layer_shell backend disabled (needs wayland-client, wayland-scanner)")
   endif()
 
   pkg_check_modules(DBUS IMPORTED_TARGET dbus-1)
   pkg_check_modules(LIBEI IMPORTED_TARGET libei-1.0)
-  if(DBUS_FOUND AND LIBEI_FOUND AND AOAHID_SHARE_HAVE_WAYLAND)
-    target_sources(aoahid_share_capture PRIVATE capture/portal.cpp)
-    target_link_libraries(aoahid_share_capture PRIVATE PkgConfig::DBUS PkgConfig::LIBEI
-                                                       aoahid_share_wayland)
-    target_compile_definitions(aoahid_share_capture PRIVATE AOAHID_SHARE_HAVE_PORTAL)
-    message(STATUS "aoahid_share: portal backend enabled")
+  if(DBUS_FOUND AND LIBEI_FOUND AND HID_SHARE_HAVE_WAYLAND)
+    target_sources(hid_share_capture PRIVATE capture/portal.cpp)
+    target_link_libraries(hid_share_capture PRIVATE PkgConfig::DBUS PkgConfig::LIBEI
+                                                       hid_share_wayland)
+    target_compile_definitions(hid_share_capture PRIVATE HID_SHARE_HAVE_PORTAL)
+    message(STATUS "hid_share: portal backend enabled")
   else()
-    message(STATUS "aoahid_share: portal backend disabled (needs dbus-1, libei-1.0, wayland-client)")
+    message(STATUS "hid_share: portal backend disabled (needs dbus-1, libei-1.0, wayland-client)")
   endif()
 elseif(WIN32)
-  target_sources(aoahid_share_capture PRIVATE capture/windows.cpp)
-  target_link_libraries(aoahid_share_capture PRIVATE user32 gdi32)
+  target_sources(hid_share_capture PRIVATE capture/windows.cpp)
+  target_link_libraries(hid_share_capture PRIVATE user32 gdi32)
 elseif(APPLE)
-  target_sources(aoahid_share_capture PRIVATE capture/macos.cpp)
-  target_link_libraries(aoahid_share_capture PRIVATE "-framework ApplicationServices"
+  target_sources(hid_share_capture PRIVATE capture/macos.cpp)
+  target_link_libraries(hid_share_capture PRIVATE "-framework ApplicationServices"
                                                      "-framework CoreFoundation")
 endif()
 
 # --- Control endpoint, shared by the daemon and its clients ---
 
-add_library(aoahid_share_control STATIC daemon/control.cpp daemon/paths.cpp daemon/store.cpp)
-target_include_directories(aoahid_share_control PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/daemon")
-target_link_libraries(aoahid_share_control PUBLIC aoahid_share_core Threads::Threads)
-aoahid_share_warnings(aoahid_share_control)
+add_library(hid_share_control STATIC daemon/control.cpp daemon/paths.cpp daemon/store.cpp)
+target_include_directories(hid_share_control PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/daemon")
+target_link_libraries(hid_share_control PUBLIC hid_share_core Threads::Threads)
+hid_share_warnings(hid_share_control)
 
-add_library(aoahid_share_daemon_lib STATIC daemon/daemon.cpp daemon/usb_watch.cpp)
-target_link_libraries(aoahid_share_daemon_lib PUBLIC aoahid_share_control aoahid_share_capture
-                                                     aoahid_share_output)
-aoahid_share_warnings(aoahid_share_daemon_lib)
+add_library(hid_share_daemon_lib STATIC daemon/daemon.cpp daemon/usb_watch.cpp)
+target_link_libraries(hid_share_daemon_lib PUBLIC hid_share_control hid_share_capture
+                                                     hid_share_output)
+hid_share_warnings(hid_share_daemon_lib)
 
 # aoahid_adb_proxy v3.2.2 (MIT), vendored unmodified from
 # github.com/nemarpuc/aoahid_adb_proxy. It needs libaoahid 1.0. It is built
 # apart from the rest so the project's warning flags do not apply to it.
-add_library(aoahid_share_proxy STATIC
+add_library(hid_share_proxy STATIC
   "${PROJECT_SOURCE_DIR}/third_party/aoahid_adb_proxy/aoahid_adb_proxy.cpp")
-target_include_directories(aoahid_share_proxy PUBLIC
+target_include_directories(hid_share_proxy PUBLIC
   "${PROJECT_SOURCE_DIR}/third_party/aoahid_adb_proxy")
-target_link_libraries(aoahid_share_proxy PUBLIC aoahid::aoahid Threads::Threads)
+target_link_libraries(hid_share_proxy PUBLIC aoahid::aoahid Threads::Threads)
 if(WIN32)
-  target_link_libraries(aoahid_share_proxy PRIVATE ws2_32)
+  target_link_libraries(hid_share_proxy PRIVATE ws2_32)
 endif()

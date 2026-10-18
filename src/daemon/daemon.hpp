@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "aoahid_share/config.hpp"
-#include "aoahid_share/position_cell.hpp"
-#include "aoahid_share/session.hpp"
+#include "hid_share/config.hpp"
+#include "hid_share/position_cell.hpp"
+#include "hid_share/session.hpp"
 
 #include "adb.hpp"
 #include "capture.hpp"
-#include "usb.hpp"
+#include "hub.hpp"
 #include "usb_watch.hpp"
 
 #include <array>
@@ -21,7 +21,7 @@
 #include <thread>
 #include <vector>
 
-namespace aoas {
+namespace hids {
 
 // Ties the capture backend, the sessions and the USB output together. All of
 // its state is touched only on the capture thread; other threads hand work to
@@ -197,7 +197,7 @@ class Daemon final : public CaptureHandler {
     Config config_;
     std::string config_error_;
 
-    Usb usb_;
+    Hub hub_;
     std::unique_ptr<Capture> capture_;
     std::string capture_error_;
     // Guards capture_ against the threads that post to it or stop it while
@@ -229,7 +229,12 @@ class Daemon final : public CaptureHandler {
     // The serial of the device that had the input last.
     std::string last_used_;
     // Devices that are connected but have no file yet.
-    std::vector<PhoneInfo> new_;
+    std::vector<TargetInfo> new_;
+    // Boards are searched for only when asked to; this is set by the command
+    // and taken by the next scan.
+    std::atomic<bool> probe_boards_{};
+    // What the last scan could not do. Capture thread only.
+    std::string scan_error_;
     // The reading "fill" runs: its thread, whose phone, and whether it is
     // to end early (the daemon is quitting).
     std::thread fill_thread_;
@@ -274,4 +279,4 @@ class Daemon final : public CaptureHandler {
     int exit_code_{};
 };
 
-} // namespace aoas
+} // namespace hids

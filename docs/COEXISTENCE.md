@@ -2,7 +2,7 @@
 
 Desktops already use screen edges: hot corners, auto-hiding bars, tiling a
 window by dragging it to the edge, and, with several monitors, moving to the
-next one. aoahid_share is built to leave those alone.
+next one. hid_share is built to leave those alone.
 
 ## What it does
 
@@ -19,7 +19,7 @@ next one. aoahid_share is built to leave those alone.
 5. **Optional push.** `enter_push` makes the cursor cross only after pushing
    that many pixels against the edge, for a segment that overlaps a desktop
    feature. Not available on `portal`.
-6. **Pause.** `aoahid_share pause` stops crossing until
+6. **Pause.** `hid_share pause` stops crossing until
    `resume`.
 
 ## While the input is on the device
@@ -36,7 +36,7 @@ cursor has to stay somewhere:
 
 ## Known overlaps
 
-| Desktop | Edge feature | With aoahid_share |
+| Desktop | Edge feature | With hid_share |
 | --- | --- | --- |
 | KDE Plasma | screen edge actions, edge tiling | On Wayland the barrier has to cover the whole edge ([PLATFORMS.md](PLATFORMS.md#linux-portal)); a crossing outside the segment is handed back at once. Whether KWin's own edge actions still fire on that edge has not been checked. |
 | GNOME | hot corner, edge tiling | corners are excluded |

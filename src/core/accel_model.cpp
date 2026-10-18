@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-#include "aoahid_share/accel_model.hpp"
+#include "hid_share/accel_model.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 struct Segment {
@@ -113,4 +113,4 @@ double AccelModel::slow_gain() const noexcept {
     return density_scale_ * curve_gain(pointer_speed_, 0.0);
 }
 
-} // namespace aoas
+} // namespace hids

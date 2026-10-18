@@ -17,7 +17,7 @@
 #include <unistd.h>
 #endif
 
-namespace aoas {
+namespace hids {
 namespace {
 
 constexpr size_t longest_command = 4096;
@@ -75,7 +75,7 @@ std::string ControlServer::start(Handler handler) {
     handler_ = std::move(handler);
     std::string probe;
     if (control_request("status", probe))
-        return "another aoahid_share_daemon is already running";
+        return "another hid_share_daemon is already running";
     stop_event_ = CreateEventA(nullptr, TRUE, FALSE, nullptr);
     stopping_.store(false);
     thread_ = std::thread([this] { serve(); });
@@ -182,7 +182,7 @@ std::string ControlServer::start(Handler handler) {
 
     std::string probe;
     if (control_request("status", probe))
-        return "another aoahid_share_daemon is already running";
+        return "another hid_share_daemon is already running";
     // Nobody answered, so a file left there belongs to a daemon that died.
     unlink(path.c_str());
 
@@ -282,4 +282,4 @@ bool control_request(const std::string& line, std::string& answer) {
 
 #endif
 
-} // namespace aoas
+} // namespace hids

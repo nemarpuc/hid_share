@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "aoahid_share/config.hpp"
+#include "hid_share/config.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-namespace aoas {
+namespace hids {
 
 // `wm size` output to the size in effect ("Override size" wins over
 // "Physical size"). False when neither line is there.
@@ -100,4 +100,4 @@ class Adb {
     std::string path_;
 };
 
-} // namespace aoas
+} // namespace hids

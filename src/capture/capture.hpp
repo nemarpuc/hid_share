@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "aoahid_share/geometry.hpp"
-#include "aoahid_share/keymap.hpp"
+#include "hid_share/geometry.hpp"
+#include "hid_share/keymap.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace aoas {
+namespace hids {
 
 // A span of one monitor edge the cursor can cross at.
 struct Barrier {
@@ -80,4 +80,4 @@ class Capture {
 [[nodiscard]] std::vector<std::unique_ptr<Capture>> capture_candidates(const std::string& backend,
                                                                        std::string& error);
 
-} // namespace aoas
+} // namespace hids

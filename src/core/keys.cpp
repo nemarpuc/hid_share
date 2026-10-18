@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-#include "aoahid_share/keys.hpp"
+#include "hid_share/keys.hpp"
 
-#include "aoahid_share/ini_edit.hpp"
+#include "hid_share/ini_edit.hpp"
 
-namespace aoas {
+namespace hids {
 namespace {
 
 using S = KeyScope;
@@ -19,7 +19,7 @@ constexpr ConfigKey table[] = {
     {S::both, "mouse", "enabled", "Mouse and keyboard", K::boolean, "", "", "true",
      "false does not register the mouse on the device."},
     {S::computer, "mouse", "buttons", "Mouse and keyboard", K::integer, "1..8", "", "5",
-     "How many mouse buttons are sent; `aoahid_share buttons` reports what your mice have."},
+     "How many mouse buttons are sent; `hid_share buttons` reports what your mice have."},
     {S::computer, "mouse", "button_map", "Mouse and keyboard", K::list, "1..8, comma-separated", "",
      "",
      "HID button for PC button 1, 2, ...; empty keeps them in order, 1,3,2 swaps right and "
@@ -92,9 +92,20 @@ constexpr ConfigKey table[] = {
     {S::computer, "adb", "first_port", "Adb", K::integer, "1024..65535", "", "6555",
      "Where the proxy ports start (not 5555 to 5585)."},
 
+    // [mim]
+    {S::computer, "mim", "baud", "Board", K::integer, "1..4000000", "baud", "",
+     "The serial speed of every board. It must be the one the board's firmware is built for; "
+     "there is no default."},
+    {S::computer, "mim", "timeout_ms", "Board", K::integer, "1..60000", "ms", "",
+     "How long the serial link waits for a board's answer; there is no default."},
+
     // device file [device]
     {S::device, "device", "serial", "Device", K::text, "", "", "",
-     "USB serial number; the file is named after it.", true},
+     "The serial number the file is named after: a phone's USB serial, or mim- and the end of "
+     "a board's port.", true},
+    {S::device, "device", "link", "Device", K::choice, "aoa|mim", "", "",
+     "How the device is reached: aoa for a phone, mim for a microcontroller board. It is set "
+     "when the device is added; there is no default.", true},
     {S::device, "device", "name", "Device", K::text, "", "", "",
      "Display name, at most 48 bytes, without = ; #."},
     {S::device, "device", "enabled", "Device", K::boolean, "", "", "true",
@@ -164,6 +175,24 @@ constexpr ConfigKey table[] = {
      "How far the picture on the device is turned for the person looking at it; leave at 0 unless "
      "the device is mounted turned."},
 
+    // device file [mim] and [usb]: a board only
+    {S::device, "mim", "port", "Board", K::text, "", "", "",
+     "The board's serial port: /dev/ttyUSB0, or a /dev/serial/by-id/ path that stays the same "
+     "when the board is plugged in again, or COM3. The device's serial is made from its last "
+     "part, so it is set when the device is added.", true},
+    {S::device, "usb", "vendor_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",
+     "The vendor id the board announces to its target; there is no default."},
+    {S::device, "usb", "product_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",
+     "The product id the board announces; there is no default."},
+    {S::device, "usb", "manufacturer", "Board USB", K::text, "at most 31 characters", "", "",
+     "The manufacturer string the board announces; there is no default."},
+    {S::device, "usb", "product", "Board USB", K::text, "at most 31 characters", "", "",
+     "The product string the board announces; there is no default."},
+    {S::device, "usb", "serial", "Board USB", K::text, "at most 31 characters", "", "",
+     "The serial number the board announces; empty announces none (unless serial_from_chip_id)."},
+    {S::device, "usb", "serial_from_chip_id", "Board USB", K::boolean, "", "", "false",
+     "Announce the board chip's own id as the serial number when serial is empty."},
+
     // device file [adb]
     {S::device, "adb", "proxy", "Adb", K::boolean, "", "", "false",
      "Serve this device's ADB interface on its port."},
@@ -189,6 +218,11 @@ constexpr StatusKey status_table[] = {
      "A monitor as the daemon sees it: name, position and size in pixels, physical size in mm."},
     {false, "new.#", "Host", "", "",
      "A plugged-in device that has no file yet, with its product name."},
+    {false, "new_link.#", "Host", "", "",
+     "How a device that has no file yet was found: aoa for a phone, mim for a board."},
+    {false, "scan_error", "Host", "", "",
+     "Why the last scan could not list everything, for example that boards are not searched for "
+     "while one is open."},
     {false, "files_version", "Files", "", "", "Counts the times the daemon wrote a device's file."},
 
     // Per device.
@@ -202,6 +236,7 @@ constexpr StatusKey status_table[] = {
     {true, "plugged", "Device", "", "", "yes when the last scan saw it plugged in."},
     {true, "locked", "Device", "", "", "yes while its lock key holds the input on it."},
     {true, "serial", "Device", "", "", "Its serial."},
+    {true, "link", "Device", "", "", "aoa for a phone, mim for a board."},
     {true, "proxy", "Device", "", "", "The ADB proxy port, or off."},
     {true, "size", "Device", "px", "", "The screen size in use (width x height)."},
     {true, "rotation", "Device", "deg", "", "The rotation in use."},
@@ -305,4 +340,4 @@ const StatusKey* find_status_key(const bool per_device, const std::string_view k
     return nullptr;
 }
 
-} // namespace aoas
+} // namespace hids

@@ -20,7 +20,7 @@
 #endif
 #endif
 
-namespace aoas {
+namespace hids {
 namespace {
 
 namespace fs = std::filesystem;
@@ -53,12 +53,12 @@ fs::path executable_directory() {
 // cannot be written to (an installed copy).
 fs::path user_directory() {
 #if defined(_WIN32)
-    return fs::path(env("APPDATA")) / "aoahid_share";
+    return fs::path(env("APPDATA")) / "hid_share";
 #elif defined(__APPLE__)
-    return fs::path(env("HOME")) / "Library" / "Application Support" / "aoahid_share";
+    return fs::path(env("HOME")) / "Library" / "Application Support" / "hid_share";
 #else
     const std::string base = env("XDG_CONFIG_HOME");
-    return (!base.empty() ? fs::path(base) : fs::path(env("HOME")) / ".config") / "aoahid_share";
+    return (!base.empty() ? fs::path(base) : fs::path(env("HOME")) / ".config") / "hid_share";
 #endif
 }
 
@@ -93,7 +93,7 @@ bool writable_directory(const fs::path& directory) {
 #endif
 
 fs::path find_settings_directory() {
-    const std::string custom = env("AOAHID_SHARE_SETTINGS_DIR");
+    const std::string custom = env("HID_SHARE_SETTINGS_DIR");
     if (!custom.empty()) {
         std::error_code error;
         fs::create_directories(custom, error);
@@ -123,12 +123,12 @@ std::string state_file_path() { return (fs::path(settings_dir()) / "state.ini").
 
 std::string control_endpoint() {
 #if defined(_WIN32)
-    return R"(\\.\pipe\aoahid_share)";
+    return R"(\\.\pipe\hid_share)";
 #else
     // XDG_RUNTIME_DIR is already private to the user.
     const std::string runtime = env("XDG_RUNTIME_DIR");
     if (!runtime.empty())
-        return (std::filesystem::path(runtime) / "aoahid_share.sock").string();
+        return (std::filesystem::path(runtime) / "hid_share.sock").string();
 
     // Otherwise the socket goes into a directory of its own under the shared
     // temporary directory. Another user could have made that name first, so
@@ -138,7 +138,7 @@ std::string control_endpoint() {
     if (base.empty())
         base = "/tmp";
     const std::string directory =
-        (std::filesystem::path(base) / ("aoahid_share-" + std::to_string(getuid()))).string();
+        (std::filesystem::path(base) / ("hid_share-" + std::to_string(getuid()))).string();
     static_cast<void>(mkdir(directory.c_str(), 0700));
     struct stat info{};
     if (lstat(directory.c_str(), &info) != 0 || !S_ISDIR(info.st_mode) || info.st_uid != getuid() ||
@@ -223,4 +223,4 @@ std::string state_set(const std::string& text, const std::string& key, const std
     return result;
 }
 
-} // namespace aoas
+} // namespace hids

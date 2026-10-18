@@ -3,18 +3,18 @@
 
 #include <cstdlib>
 
-namespace aoas {
+namespace hids {
 
-#ifdef AOAHID_SHARE_HAVE_PORTAL
+#ifdef HID_SHARE_HAVE_PORTAL
 std::unique_ptr<Capture> make_portal_capture();
 #endif
-#ifdef AOAHID_SHARE_HAVE_LAYER_SHELL
+#ifdef HID_SHARE_HAVE_LAYER_SHELL
 std::unique_ptr<Capture> make_layer_shell_capture();
 #endif
-#ifdef AOAHID_SHARE_HAVE_X11
+#ifdef HID_SHARE_HAVE_X11
 std::unique_ptr<Capture> make_x11_capture();
 #endif
-#ifdef AOAHID_SHARE_HAVE_EVDEV
+#ifdef HID_SHARE_HAVE_EVDEV
 std::unique_ptr<Capture> make_evdev_capture();
 #endif
 #ifdef _WIN32
@@ -52,19 +52,19 @@ std::vector<std::unique_ptr<Capture>> capture_candidates(const std::string& back
     // backend is offered automatically only without a Wayland display.
     const bool wayland = has_env("WAYLAND_DISPLAY");
     const bool x11 = has_env("DISPLAY");
-#ifdef AOAHID_SHARE_HAVE_PORTAL
+#ifdef HID_SHARE_HAVE_PORTAL
     if (!automatic || wayland)
         add(list, backend, "portal", &make_portal_capture);
 #endif
-#ifdef AOAHID_SHARE_HAVE_LAYER_SHELL
+#ifdef HID_SHARE_HAVE_LAYER_SHELL
     if (!automatic || wayland)
         add(list, backend, "layer_shell", &make_layer_shell_capture);
 #endif
-#ifdef AOAHID_SHARE_HAVE_X11
+#ifdef HID_SHARE_HAVE_X11
     if (!automatic || (x11 && !wayland))
         add(list, backend, "x11", &make_x11_capture);
 #endif
-#ifdef AOAHID_SHARE_HAVE_EVDEV
+#ifdef HID_SHARE_HAVE_EVDEV
     // Reading every key from the kernel is a wider permission than a
     // desktop's own capture, so it is never a silent fallback for one.
     if (!automatic || (!wayland && !x11))
@@ -79,4 +79,4 @@ std::vector<std::unique_ptr<Capture>> capture_candidates(const std::string& back
     return list;
 }
 
-} // namespace aoas
+} // namespace hids

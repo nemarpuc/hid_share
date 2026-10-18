@@ -16,6 +16,9 @@ env:
   AOAHID_REPOSITORY: nemarpuc/libaoahid
   # Changing the tag means changing the hashes in the matrix below too.
   AOAHID_TAG: v1.0.0
+  MIMHID_REPOSITORY: nemarpuc/libmimhid
+  # Changing the tag means changing the hashes in the matrix below too.
+  MIMHID_TAG: v0.1.0
 
 jobs:
   build:
@@ -28,21 +31,29 @@ jobs:
             name: linux-x86_64
             aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
             aoahid_sha256: 70cf0cd10d6aa0d7bf2edaece850131c8aef27a01fc996029345da5681c35d26
+            mimhid_asset: libmimhid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
+            mimhid_sha256: 524dce4ac51151a568703ea421e3a9d3acc3ca0a3e3a495495fd9c0d14b25bfc
           - os: windows-2022
             platform: windows
             name: windows-x86_64
             aoahid_asset: libaoahid-*-windows-x86_64-shared.zip
             aoahid_sha256: 5b4de548ac399571bbfa23e269db28681778fff58a7aa26f126b133d4cd7a636
+            mimhid_asset: libmimhid-*-windows-x86_64-shared.zip
+            mimhid_sha256: f28f82e543c6ca1eb46547b233f5f3099e17b7a852b1dc75263f5a167669b4f0
           - os: macos-15
             platform: macos
             name: macos-arm64
             aoahid_asset: libaoahid-*-macos-arm64-shared.tar.gz
             aoahid_sha256: 3dcd791be8d3cd4661a48a72fb48db54fc1b18d53b3953664b799b2de5b6ffc8
+            mimhid_asset: libmimhid-*-macos-arm64-shared.tar.gz
+            mimhid_sha256: 1a59c53c69a555301eb76029842b3660bc711b4dd179f7f0cc407c40d14e6f9d
           - os: macos-15-intel
             platform: macos
             name: macos-x86_64
             aoahid_asset: libaoahid-*-macos-x86_64-shared.tar.gz
             aoahid_sha256: 6010ec8e8bfc7dba069f40337b6d775cf486ebd886f7cb58f20817bd23ba93f9
+            mimhid_asset: libmimhid-*-macos-x86_64-shared.tar.gz
+            mimhid_sha256: c4cdd328ec628a575c49f524af6d26a78ddbf0b76e89799679848256bd2697af
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -95,11 +106,51 @@ jobs:
           fi
           echo "AOAHID_PREFIX=$prefix" >> "$GITHUB_ENV"
 
+      - name: Download libmimhid release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dependencies-mimhid
+          gh release download "$MIMHID_TAG" --repo "$MIMHID_REPOSITORY" \
+            --pattern '${{ matrix.mimhid_asset }}' --dir dependencies-mimhid
+          cd dependencies-mimhid
+          shopt -s nullglob
+          archives=(${{ matrix.mimhid_asset }})
+          shopt -u nullglob
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one matching asset, found ${#archives[@]}."
+            exit 1
+          fi
+          if command -v sha256sum > /dev/null; then
+            echo "${{ matrix.mimhid_sha256 }}  ${archives[0]}" | sha256sum -c -
+          else
+            echo "${{ matrix.mimhid_sha256 }}  ${archives[0]}" | shasum -a 256 -c -
+          fi
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            unzip -q "${archives[0]}"
+          else
+            tar -xzf "${archives[0]}"
+          fi
+          base="${archives[0]%.tar.gz}"
+          base="${base%.zip}"
+          if [ ! -f "$base/lib/cmake/mimhid/mimhid-config.cmake" ]; then
+            echo "::error::$base does not look like a libmimhid CMake package."
+            exit 1
+          fi
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            prefix="$(cygpath -m "$PWD/$base")"
+          else
+            prefix="$PWD/$base"
+          fi
+          echo "MIMHID_PREFIX=$prefix" >> "$GITHUB_ENV"
+
       - name: Build and test
         shell: bash
         run: |
           set -euo pipefail
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$AOAHID_PREFIX"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$AOAHID_PREFIX;$MIMHID_PREFIX"
           cmake --build build --config Release --parallel
           ctest --test-dir build --output-on-failure -C Release
 
@@ -112,25 +163,26 @@ jobs:
           if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             version="${REF_NAME#v}"
             # The tag has to be the version the build files carry.
-            grep -q "project(aoahid_share VERSION ${version} " CMakeLists.txt
+            grep -q "project(hid_share VERSION ${version} " CMakeLists.txt
           else
-            version="$(sed -n 's/^project(aoahid_share VERSION \([0-9.]*\) .*/\1/p' CMakeLists.txt)"
+            version="$(sed -n 's/^project(hid_share VERSION \([0-9.]*\) .*/\1/p' CMakeLists.txt)"
           fi
-          stage="aoahid-share-${version}-${{ matrix.name }}"
+          stage="hid-share-${version}-${{ matrix.name }}"
           cmake --install build --config Release --prefix "$stage"
-          # The libaoahid runtime goes next to the programs, which look there.
+          # The libaoahid and libmimhid runtimes go next to the programs, which look there.
           if [ "${{ matrix.platform }}" = "windows" ]; then
-            cp "$AOAHID_PREFIX"/bin/*.dll "$stage/bin/"
+            cp "$AOAHID_PREFIX"/bin/*.dll "$MIMHID_PREFIX"/bin/*.dll "$stage/bin/"
           elif [ "${{ matrix.platform }}" = "macos" ]; then
-            cp -a "$AOAHID_PREFIX"/lib/libaoahid*.dylib "$stage/bin/"
+            cp -a "$AOAHID_PREFIX"/lib/libaoahid*.dylib "$MIMHID_PREFIX"/lib/libmimhid*.dylib "$stage/bin/"
           else
-            cp -a "$AOAHID_PREFIX"/lib/libaoahid.so* "$stage/bin/"
+            cp -a "$AOAHID_PREFIX"/lib/libaoahid.so* "$MIMHID_PREFIX"/lib/libmimhid.so* "$stage/bin/"
           fi
           mkdir -p "$stage/licenses"
           cp README.md CHANGELOG.md LICENSE "$stage/"
           cp -R docs "$stage/docs"
           cp third_party/licenses/* "$stage/licenses/"
           cp -R "$AOAHID_PREFIX"/share/doc/libaoahid "$stage/licenses/libaoahid" 2> /dev/null || true
+          cp -R "$MIMHID_PREFIX"/share/doc/libmimhid "$stage/licenses/libmimhid" 2> /dev/null || true
           if [ "${{ matrix.platform }}" = "windows" ]; then
             7z a -tzip "$stage.zip" "$stage" > /dev/null
           else
@@ -141,8 +193,8 @@ jobs:
         with:
           name: ${{ matrix.name }}
           path: |
-            aoahid-share-*.tar.gz
-            aoahid-share-*.zip
+            hid-share-*.tar.gz
+            hid-share-*.zip
           if-no-files-found: error
 
   publish:
@@ -168,10 +220,10 @@ jobs:
         run: |
           set -euo pipefail
           cd artifacts
-          sha256sum aoahid-share-* > SHA256SUMS
+          sha256sum hid-share-* > SHA256SUMS
           version="${REF_NAME#v}"
           # The notes are this version's section of the changelog.
           awk -v v="## ${version}" '$0 == v {on = 1; next} /^## / {on = 0} on' \
             ../CHANGELOG.md > notes.md
           gh release create "$REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$REF_NAME" \
-            --notes-file notes.md aoahid-share-* SHA256SUMS
+            --notes-file notes.md hid-share-* SHA256SUMS

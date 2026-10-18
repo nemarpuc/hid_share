@@ -6,7 +6,7 @@
 #include <string>
 #include <thread>
 
-namespace aoas {
+namespace hids {
 
 // Serves one-line commands on the control endpoint: a Unix socket only its
 // owner can open, or a named pipe on Windows. One command per connection;
@@ -41,4 +41,4 @@ class ControlServer {
 // Sends one command to the running daemon. False when none is running.
 [[nodiscard]] bool control_request(const std::string& line, std::string& answer);
 
-} // namespace aoas
+} // namespace hids

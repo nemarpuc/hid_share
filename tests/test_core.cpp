@@ -2,13 +2,13 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "third_party/doctest.h"
 
-#include "aoahid_share/accel_model.hpp"
-#include "aoahid_share/config.hpp"
-#include "aoahid_share/geometry.hpp"
-#include "aoahid_share/keymap.hpp"
-#include "aoahid_share/position_cell.hpp"
-#include "aoahid_share/session.hpp"
-#include "aoahid_share/tracker.hpp"
+#include "hid_share/accel_model.hpp"
+#include "hid_share/config.hpp"
+#include "hid_share/geometry.hpp"
+#include "hid_share/keymap.hpp"
+#include "hid_share/position_cell.hpp"
+#include "hid_share/session.hpp"
+#include "hid_share/tracker.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -17,7 +17,7 @@
 #include <thread>
 #include <vector>
 
-using namespace aoas;
+using namespace hids;
 
 namespace {
 
@@ -1378,4 +1378,75 @@ TEST_CASE("a device either follows Settings' movement or has all of its own") {
     REQUIRE(parse_device(format_device(device), back).empty());
     CHECK(has_own_motion(back.motion));
     CHECK(motion_of(config, back).sensitivity == 2.0);
+}
+
+TEST_CASE("a board is written and read back, and its serial comes from its port") {
+    CHECK(mim_serial_of("/dev/ttyUSB0") == "mim-ttyUSB0");
+    CHECK(mim_serial_of("COM3") == "mim-COM3");
+    CHECK(mim_serial_of("/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A50285BI-if00-port0") ==
+          "mim-usb-FTDI_FT232R_USB_UART_A50285BI-if00-port0");
+    CHECK(mim_serial_of("/dev/a b").find(' ') == std::string::npos);
+    CHECK(valid_serial(mim_serial_of("/dev/cu.usbserial-0001")));
+    CHECK(mim_serial_of("").empty());
+
+    DeviceConfig board;
+    board.serial = "mim-ttyUSB0";
+    board.link = LinkKind::mim;
+    board.mim.port = "/dev/ttyUSB0";
+    board.mim.vendor_id = 0x1234;
+    board.mim.product_id = 0x5678;
+    board.mim.manufacturer = "maker";
+    board.mim.product = "board";
+    board.mim.serial_from_chip_id = true;
+    DeviceConfig back;
+    REQUIRE(parse_device(format_device(board), back).empty());
+    CHECK(back.link == LinkKind::mim);
+    CHECK(back.mim.port == board.mim.port);
+    CHECK(back.mim.vendor_id == 0x1234);
+    CHECK(back.mim.product_id == 0x5678);
+    CHECK(back.mim.manufacturer == "maker");
+    CHECK(back.mim.product == "board");
+    CHECK(back.mim.serial.empty());
+    CHECK(back.mim.serial_from_chip_id);
+
+    // Nothing is assumed for what was not given: an older file has no link,
+    // and a board's ids and strings are empty until they are typed.
+    DeviceConfig older;
+    REQUIRE(parse_device("[device]\nserial = S1\n", older).empty());
+    CHECK(older.link == LinkKind::unset);
+    CHECK(older.mim.vendor_id == 0);
+    DeviceConfig fresh;
+    REQUIRE(parse_device("[device]\nserial = mim-x\nlink = mim\n[usb]\nvendor_id =\n", fresh).empty());
+    CHECK(fresh.mim.vendor_id == 0);
+    CHECK_FALSE(parse_device("[device]\nlink = usb\n", fresh).empty());
+    CHECK_FALSE(parse_device("[usb]\nvendor_id = 0x10000\n", fresh).empty());
+    CHECK_FALSE(parse_device("[usb]\nvendor_id = 0\n", fresh).empty());
+    CHECK_FALSE(parse_device("[usb]\nproduct = 0123456789012345678901234567890x\n", fresh).empty());
+
+    // A board is not served by adb and is known by its port.
+    Config config;
+    config.devices = {board};
+    CHECK(validate_config(config).empty());
+    config.devices[0].adb_proxy = true;
+    CHECK_FALSE(validate_config(config).empty());
+    config.devices[0].adb_proxy = false;
+    config.devices[0].serial = "other";
+    CHECK_FALSE(validate_config(config).empty());
+    config.devices = {board, board};
+    config.devices[1].serial = "mim-ttyUSB0b";
+    config.devices[1].name = "second";
+    CHECK_FALSE(validate_config(config).empty());
+
+    // The serial link is the computer's, and has no default.
+    Config globals;
+    CHECK(globals.mim.baud == 0);
+    CHECK(globals.mim.timeout_ms == 0);
+    globals.mim.baud = 921600;
+    globals.mim.timeout_ms = 500;
+    Config read;
+    REQUIRE(parse_globals(format_globals(globals), read).empty());
+    CHECK(read.mim.baud == 921600);
+    CHECK(read.mim.timeout_ms == 500);
+    CHECK_FALSE(parse_globals("[mim]\nbaud = 0\n", read).empty());
+    CHECK_FALSE(parse_globals("[mim]\ntimeout_ms = 60001\n", read).empty());
 }

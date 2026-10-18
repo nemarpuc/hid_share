@@ -8,7 +8,7 @@
 #include <system_error>
 #include <vector>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 // A profile that names no device has no serial to be
@@ -101,4 +101,4 @@ bool save_store(const Config& config) {
     return true;
 }
 
-} // namespace aoas
+} // namespace hids

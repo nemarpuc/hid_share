@@ -1,8 +1,26 @@
 # Changelog
 
+## 0.4.0
+
+- Renamed from aoahid_share to hid_share: the include directory, namespace,
+  programs, environment variables and repository.
+- A MIM board (libmimhid) is now the main way to reach a target machine, of any
+  kind; an Android phone over AOA (libaoahid) still works. A device's file says
+  `link = aoa|mim`; a file without it is not opened and its status asks for the
+  line (add `link = aoa` to files from earlier versions).
+- New `[mim]` (`baud`, `timeout_ms`) and, per board, `[mim]` / `[usb]` sections.
+  They have no defaults. New `find_boards` command; a board is searched for
+  only when asked, never while one is open. See `docs/CONFIG.md`.
+- The output side is split into a hub (queue, pacing, statistics) and one port
+  per target; the AOA code is unchanged in behaviour.
+- The settings window groups devices by link and has a Board (MIM) tab and a
+  USB tab for boards.
+- Builds need libmimhid 0.1 or newer as well as libaoahid; CI and release
+  builds fetch it.
+
 ## 0.3.11
 
-- Interactive display calibration wizard in GUI and CLI (`aoahid_share calibrate`)
+- Interactive display calibration wizard in GUI and CLI (`hid_share calibrate`)
   to calibrate screen boundaries and cursor gain without ADB.
 - Reorganized Screen tab in the settings window: simpler resolution and gain
   view, collapsed ADB details, and clear cursor idle / entry mode selection
@@ -42,7 +60,7 @@
 ## 0.3.6
 
 - Volume up and volume down join the media keys: `volume_up` and
-  `volume_down` in a device's `[keys]`, in `aoahid_share media`, and as
+  `volume_down` in a device's `[keys]`, in `hid_share media`, and as
   buttons in the device's Tools tab.
 
 ## 0.3.5
@@ -58,7 +76,7 @@
 - Gone: `toggle_hotkey`, `panic_hotkey`, `pause_hotkey`, `resync_hotkey`, the
   `[media]` hotkeys and `target` in `config.ini`, and `[device] hotkey`. They
   are still read, and dropped; set the keys again in each device's Keys tab.
-  `aoahid_share pause`, `resume` and `release` are unchanged.
+  `hid_share pause`, `resume` and `release` are unchanged.
 - `status`: `protocol` is 3; `media_target` is gone.
 - Settings window: a Keys tab per device; the computer's page has an HID tab
   and no hotkeys; Tools, then Status and Reports, are the last tabs; Status
@@ -133,7 +151,7 @@ The settings window was rebuilt.
   edge: real switches for on and off, drop-downs, fields. A device has the tabs
   Device, Placement, Screen, Motion, Status and Tools; the computer has General,
   Motion (the polling rate is here), ADB, Status and Tools.
-- Every key of the config files and every key of `aoahid_share status` is shown
+- Every key of the config files and every key of `hid_share status` is shown
   with its unit, default and meaning (as a tip on the name), and every setting
   can be edited except the serial number and the date a device was read, which
   mean nothing when typed. A value the parsers refuse stays on screen with their

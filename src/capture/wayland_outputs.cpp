@@ -9,7 +9,7 @@
 #include <cstring>
 #include <memory>
 
-namespace aoas {
+namespace hids {
 namespace {
 
 struct Output {
@@ -131,4 +131,4 @@ std::vector<Monitor> query_wayland_outputs() {
     return monitors;
 }
 
-} // namespace aoas
+} // namespace hids

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "aoahid_share/config.hpp"
+#include "hid_share/config.hpp"
 
 #include <string>
 
-namespace aoas {
+namespace hids {
 
 // The folder with one file per device, "device" under the settings folder.
 [[nodiscard]] std::string devices_dir();
@@ -24,4 +24,4 @@ namespace aoas {
 // written.
 [[nodiscard]] bool save_store(const Config& config);
 
-} // namespace aoas
+} // namespace hids

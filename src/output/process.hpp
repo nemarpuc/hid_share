@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace aoas {
+namespace hids {
 
 struct RunResult {
     // False when the program could not be started at all.
@@ -27,4 +27,4 @@ struct RunResult {
 // none lingers as a defunct process. Only those: no other child is touched.
 void reap_detached() noexcept;
 
-} // namespace aoas
+} // namespace hids

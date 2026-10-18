@@ -25,7 +25,7 @@ in `libei.h`; `windows`, `macos`) therefore feel different at the same
 sensitivity, as they would for a USB mouse plugged into the device.
 
 Where a device's `switch` key is not seen on the PC side, the input moves to the device by
-crossing the edge, or by binding `aoahid_share enter` to a key in the desktop's
+crossing the edge, or by binding `hid_share enter` to a key in the desktop's
 own shortcut settings. A device's keys always work while the input is on the device.
 
 Automatic choice on Linux: with `WAYLAND_DISPLAY`, `portal` then `layer_shell`;
@@ -64,7 +64,7 @@ with only `DISPLAY`, `x11`; with neither, `evdev`.
   and none on an edge that touches another screen anywhere. The daemon first
   asks for the segment; when that is refused it asks for the whole edge and
   hands the cursor straight back when it crosses outside the segment.
-- The compositor decides when a capture starts, so `aoahid_share enter` and
+- The compositor decides when a capture starts, so `hid_share enter` and
   a `switch` key cannot start one; `enter_push` has no effect either.
 - Which keys the compositor keeps for itself during a capture has not been
   examined.
@@ -87,7 +87,7 @@ with only `DISPLAY`, `x11`; with neither, `evdev`.
   of the `input` group. That lets the daemon read every key typed on the
   machine; it is never chosen automatically inside a desktop session.
 - It cannot see the cursor, so there is no edge: use the device's `switch` key or
-  `aoahid_share enter`.
+  `hid_share enter`.
 - The devices are taken only at a moment when no key is down, and nothing is
   forwarded before that.
 
@@ -116,7 +116,7 @@ with only `DISPLAY`, `x11`; with neither, `evdev`.
   events from intercepting processes
   ([TN2150](https://developer.apple.com/library/archive/technotes/tn2150/_index.html)),
   as in password fields.
-- `aoahid_share buttons` is not implemented here.
+- `hid_share buttons` is not implemented here.
 - Built in CI; not yet run on real hardware.
 
 ## When the desktop ends the capture
@@ -124,7 +124,7 @@ with only `DISPLAY`, `x11`; with neither, `evdev`.
 A capture can end without the daemon asking: the compositor or the X server
 restarts, or the desktop closes the portal session. The daemon then gives the
 input back to the PC, keeps the devices open, and starts a capture again, the
-way it does at startup: it tries every 15 seconds, and `aoahid_share status`
+way it does at startup: it tries every 15 seconds, and `hid_share status`
 says `state=starting` and why until one is running. A capture that ended
 within 15 seconds of starting is tried again only after that wait.
 
@@ -150,6 +150,6 @@ to a separate Consumer Control device.
 ## Mouse buttons
 
 The number of buttons is part of the HID descriptor the device is opened with
-(`[mouse] buttons`, 1 to 8, default 5). `aoahid_share buttons` reports how many
+(`[mouse] buttons`, 1 to 8, default 5). `hid_share buttons` reports how many
 the connected mice have; it is only run on request, and the value is yours to
 write into the config.
