@@ -212,7 +212,6 @@ LinkOptions link_options_for(const Config& config, const DeviceConfig& device) {
     // Only a board has these; a phone's must not change when they do.
     if (device.link == LinkKind::mim) {
         options.mim.baud = device.mim.baud;
-        options.mim.timeout_ms = config.mim.timeout_ms;
         options.mim.vendor_id = device.mim.vendor_id;
         options.mim.product_id = device.mim.product_id;
         options.mim.manufacturer = device.mim.manufacturer;
@@ -542,10 +541,6 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
     device_wake_.notify_all();
     device_thread_.join();
 
-    // A reading through adb is ended, not waited for.
-    fill_cancel_.store(true);
-    if (fill_thread_.joinable())
-        fill_thread_.join();
     if (active_ >= 0)
         leave();
     bool any_proxy = false;
@@ -868,9 +863,7 @@ bool Daemon::measure(Phone& phone) {
         lack("accel");
     if (!missing.empty()) {
         phone.status = "not set: " + missing +
-                       (device.link == LinkKind::mim
-                            ? ". Enter them (Screen and Placement tabs)"
-                            : ". Enter them, or turn the ADB proxy on for it and fill them from adb");
+                       ". Enter them on the Screen tab, or measure the gain there";
         return false;
     }
     phone.natural = {device.width, device.height};
@@ -1081,141 +1074,6 @@ void Daemon::relayout() {
     }
     apply_barriers();
     publish_status();
-}
-
-// "fill" read this device through adb: what could be read is written into its
-// file. Nothing is made up; what the phone did not tell is said in the
-// answer, and left as it was.
-void Daemon::finish_fill(const std::string& serial, const uint64_t generation, const bool read,
-                         const PhoneFacts& facts, const std::string& problem) {
-    fill_running_.store(false);
-    publish_status();
-    const size_t index = find_device(config_, serial);
-    if (generation != generation_ || index >= phones_.size() || phones_[index]->link < 0 ||
-        phones_[index]->serial != serial || index >= config_.devices.size())
-        return;
-    Phone& phone = *phones_[index];
-    const auto report = [&](const std::string& text, const bool ok) {
-        phone.fill_note = text;
-        phone.fill_ok = ok;
-        log_line(one_line(label_of(phone.config)) + ": " + one_line(text));
-        publish_status();
-    };
-    if (!read) {
-        report("could not be read through adb: " + problem, false);
-        return;
-    }
-
-    DeviceConfig device = config_.devices[index];
-    const DeviceConfig before = device;
-    const std::vector<std::string> missing = fill_device(facts, device);
-    if (device.name.empty()) {
-        // Its own name for itself, made different from the others'.
-        // The device said this itself: only what a name may hold is kept.
-        std::string base = clean_name(facts.model).substr(0, 40);
-        if (base.empty())
-            base = phone.serial.substr(0, 40);
-        std::string name = base;
-        Config probe = config_;
-        for (int count = 2; count < 100; ++count) {
-            probe.devices[index].name = name;
-            if (validate_config(probe).empty())
-                break;
-            name = base + " " + std::to_string(count);
-        }
-        device.name = name;
-    }
-    char day[16] = "";
-    const std::time_t time = std::time(nullptr);
-    if (const std::tm* local = std::localtime(&time))
-        std::strftime(day, sizeof day, "%Y-%m-%d", local);
-    device.read_at = day;
-    // All of this came from the device. It is only kept if the file it
-    // makes reads back as itself and the config as a whole still holds;
-    // otherwise the device's file would stop the config from loading.
-    const auto sound = [&] {
-        DeviceConfig back;
-        Config probe = config_;
-        probe.devices[index] = device;
-        return parse_device(format_device(device), back).empty() &&
-               format_device(back) == format_device(device) && validate_config(probe).empty();
-    };
-    if (!sound())
-        device.name = before.name;
-    if (!sound()) {
-        report("what the phone reported is out of range, so nothing was saved", false);
-        return;
-    }
-    config_.devices[index] = device;
-    phone.config = device;
-    // Whoever shows the files is told they changed (status: files_version).
-    ++files_version_;
-    if (!save_store(config_)) {
-        report("what was read could not be written to " + device_file_path(phone.serial), false);
-        return;
-    }
-    std::string text = "read " + std::to_string(device.width) + " x " +
-                       std::to_string(device.height) + " and saved it";
-    if (device.accel == AccelSetting::off && !facts.accel_gain_known)
-        text += "; the gain is calculated, and has not been measured for this phone's switch";
-    if (!missing.empty()) {
-        text += "; not given by the phone: ";
-        for (size_t at = 0; at < missing.size(); ++at)
-            text += (at != 0 ? ", " : "") + missing[at];
-    }
-    relayout();
-    report(text, missing.empty());
-}
-
-std::string Daemon::start_fill(const size_t index) {
-    if (index >= phones_.size() || index >= config_.devices.size())
-        return "error=no such device";
-    Phone& phone = *phones_[index];
-    if (phone.link < 0)
-        return "error=the device is not connected";
-    if (phone.config.link == LinkKind::mim)
-        return "error=fill reads a phone through adb; a board's target is not read";
-    if (!phone.proxy)
-        return "error=turn the ADB proxy on for this device first, then apply";
-    if (fill_running_.load())
-        return "error=a device is being read already";
-    if (fill_thread_.joinable())
-        fill_thread_.join();
-    phone.fill_note.clear();
-    fill_running_.store(true);
-    fill_cancel_.store(false);
-    fill_serial_ = phone.serial;
-    publish_status();
-    // adb takes seconds: not on the capture thread.
-    fill_thread_ = std::thread([this, path = config_.adb_path, port = phone.port,
-                                serial = phone.serial, generation = generation_] {
-        const Adb adb(path);
-        std::string problem;
-        PhoneFacts facts;
-        bool read = adb.available();
-        bool created = false;
-        if (!read)
-            problem = "adb could not be run: install it, or set [adb] path";
-        else
-            read = adb.connect(port, problem, &fill_cancel_, &created);
-        if (read) {
-            facts = adb.inspect(port);
-            read = facts.reachable;
-            if (!read)
-                problem = facts.note;
-        }
-        // The connection this reading made ends with it: adb's server would
-        // otherwise keep one open to the proxy for as long as it runs, and
-        // the next reading would meet it stale. A connection the user made
-        // themselves is left alone.
-        if (created)
-            adb.disconnect(port);
-        post_capture([this, serial, generation, read, facts = std::move(facts),
-                      problem = std::move(problem)] {
-            finish_fill(serial, generation, read, facts, problem);
-        });
-    });
-    return "ok";
 }
 
 void Daemon::apply_barriers() {
@@ -1535,7 +1393,6 @@ void Daemon::publish_status() {
             << (info.transport == Transport::mim ? "mim" : "aoa") << "\n";
     }
     view->head = out.str();
-    view->fill_serial = fill_serial_;
 
     for (const std::unique_ptr<Phone>& phone : phones_) {
         PhoneView entry;
@@ -1563,9 +1420,6 @@ void Daemon::publish_status() {
             lines << prefix << "plugged=" << (plugged_.count(entry.serial) != 0 ? "yes" : "no")
                   << "\n";
             lines << prefix << "touch=" << touch_state(config_, phone->config) << "\n";
-            if (!phone->fill_note.empty())
-                lines << prefix << "fill=" << (phone->fill_ok ? "ok " : "error ")
-                      << one_line(phone->fill_note) << "\n";
             if (!phone->status.empty())
                 lines << prefix << "status=" << one_line(phone->status) << "\n";
             if (phone->link >= 0) {
@@ -1619,9 +1473,7 @@ std::string Daemon::render_status() {
     out << "state=" << (active >= 0 ? "android" : paused_.load() ? "paused" : "pc") << "\n";
     if (active >= 0 && static_cast<size_t>(active) < view->phones.size())
         out << "active=" << one_line(view->phones[static_cast<size_t>(active)].serial) << "\n";
-    out << "files_version=" << files_version_.load() << "\n";
     out << view->head;
-    const bool reading = fill_running_.load();
     const PhoneView* const held =
         locked_.load() && active >= 0 && static_cast<size_t>(active) < view->phones.size()
             ? &view->phones[static_cast<size_t>(active)]
@@ -1630,8 +1482,6 @@ std::string Daemon::render_status() {
         if (phone.serial.empty())
             continue;
         const std::string prefix = "device." + one_line(phone.serial) + ".";
-        if (reading && view->fill_serial == phone.serial)
-            out << prefix << "reading=1\n";
         out << phone.lines;
         if (phone.link < 0)
             continue;
@@ -1899,10 +1749,6 @@ std::string Daemon::command(const std::string& line) {
                 publish_status();
                 answer = "ok";
             }
-        } else if (verb == "fill") {
-            // Reads one connected device through its ADB proxy and writes
-            // what it says into its file.
-            answer = start_fill(phone_named(rest_of(words)));
         } else if (verb == "forget") {
             const size_t index = phone_named(rest_of(words));
             if (index >= config_.devices.size() || index >= phones_.size()) {
@@ -1921,11 +1767,9 @@ std::string Daemon::command(const std::string& line) {
                 }
                 answer = save_store(next) ? reload() : "error=the config could not be written";
             }
-        } else if (verb == "find_boards") {
-            probe_boards_.store(true);
-            rescan_now();
-            answer = "ok";
         } else if (verb == "rescan") {
+            // Asked for by the user: the serial ports are searched for boards too.
+            probe_boards_.store(true);
             rescan_now();
             answer = "ok";
         } else if (verb == "reload") {
@@ -1937,7 +1781,7 @@ std::string Daemon::command(const std::string& line) {
     // What these commands change is seen by the next status: the phone they
     // free or take shows as new or as known once it has been scanned for.
     if (answer == "ok" &&
-        (verb == "rescan" || verb == "find_boards" || verb == "connect" || verb == "forget" ||
+        (verb == "rescan" || verb == "connect" || verb == "forget" ||
          verb == "reload"))
         wait_scanned();
     return answer;

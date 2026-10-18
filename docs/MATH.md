@@ -291,7 +291,7 @@ A relative mouse is never told the display's size, and AOA HID carries nothing
 back from the device: the accessory driver's `raw_request`, the only path for
 a report toward the host, is an empty function
 ([f_accessory.c](https://android.googlesource.com/kernel/common/+/refs/heads/android13-5.15/drivers/usb/gadget/function/f_accessory.c),
-`acc_hid_raw_request`). So without adb the size has to be given once.
+`acc_hid_raw_request`). So the size has to be given once: typed, or measured with the calibration wizard.
 
 It does not have to be given in pixels. Every formula above uses a position
 only as `pixels / G`, the counts from an edge, so a device can be described in

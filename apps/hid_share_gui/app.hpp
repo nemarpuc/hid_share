@@ -37,12 +37,7 @@ struct App {
     // Non-empty: the files on disk could not be read. What is shown is not
     // what is on disk, so nothing is saved over it.
     std::string config_error;
-    // The daemon's count of the times it wrote a device's file, as last seen.
-    std::string files_version;
     bool dirty{};
-    // The daemon wrote a file that the window also holds edits of: saving them
-    // would put the old ones back, so they have to be discarded first.
-    bool stale{};
 
     // A row that was typed and refused, by row, with the parser's reason; and
     // the text being typed in a row.
@@ -72,9 +67,6 @@ struct App {
     std::string message;
     bool failed{};
 
-    // The device being filled from adb, and when to stop waiting for it.
-    std::string filling;
-    double filling_until{};
 
     // The Reports tab: the lines of the device named by reports_serial, the
     // number of the last one taken, and whether the list is frozen.
@@ -108,10 +100,7 @@ void start_daemon(App& app);
 void rescan_devices(App& app);
 // Asks the daemon to look for boards on the serial ports, which it does only
 // when asked.
-void find_boards(App& app);
 void connect_device(App& app, const std::string& serial);
-void start_fill(App& app, const std::string& serial);
-void continue_fill(App& app);
 // What the daemon reports about a device, by its serial.
 [[nodiscard]] std::string status_of(const App& app, const hids::DeviceConfig& device,
                                     const char* key);

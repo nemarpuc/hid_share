@@ -359,16 +359,10 @@ bool set_adb(Config& c, const std::string_view key, const std::string_view value
     return false;
 }
 
-// The board's serial link, for every board. Empty is a value not given.
-bool set_mim_link(Config& c, const std::string_view key, const std::string_view value) {
+// Read and dropped: until 0.4.0 the wait for a board's answer was a setting.
+bool drop_mim_link(const std::string_view key, const std::string_view value) {
     int number = 0;
-    if (key == "timeout_ms") {
-        if (!value.empty() && !to_int(value, 1, 60000, number))
-            return false;
-        c.mim.timeout_ms = static_cast<uint32_t>(value.empty() ? 0 : number);
-        return true;
-    }
-    return false;
+    return key == "timeout_ms" && (value.empty() || to_int(value, 1, 60000, number));
 }
 
 // A USB id: decimal, or hex after 0x. Empty is a value not given.
@@ -606,8 +600,11 @@ bool set_detected(DeviceConfig& d, const std::string_view key, const std::string
         return to_accel(value, d.accel);
     if (key == "gain")
         return set_auto_double(value, 0.05, 50.0, d.gain);
-    if (key == "read_at")
-        return to_name(value, d.read_at);
+    // Written by versions that read the values through adb; read and dropped.
+    if (key == "read_at") {
+        std::string dropped;
+        return to_name(value, dropped);
+    }
     return false;
 }
 
@@ -766,28 +763,6 @@ bool valid_name(const std::string_view text) noexcept {
             return false;
     }
     return text.empty() || (text.front() != ' ' && text.back() != ' ');
-}
-
-std::string clean_name(const std::string_view text) {
-    std::string name;
-    for (const char c : text) {
-        if (name_character(c) && name.size() < 48)
-            name += c;
-    }
-    // The limit counts bytes: a character it cut through is dropped whole.
-    size_t lead = name.size();
-    while (lead > 0 && (static_cast<unsigned char>(name[lead - 1]) & 0xC0) == 0x80)
-        --lead;
-    if (lead > 0 && static_cast<unsigned char>(name[lead - 1]) >= 0xC0) {
-        const unsigned char first_byte = static_cast<unsigned char>(name[lead - 1]);
-        const size_t need = first_byte >= 0xF0 ? 4 : first_byte >= 0xE0 ? 3 : 2;
-        if (name.size() - (lead - 1) < need)
-            name.erase(lead - 1);
-    }
-    while (!name.empty() && name.back() == ' ')
-        name.pop_back();
-    const size_t first = name.find_first_not_of(' ');
-    return first == std::string::npos ? std::string() : name.substr(first);
 }
 
 Motion motion_of(const Config& config, const DeviceConfig& device) noexcept {
@@ -957,7 +932,7 @@ std::string parse_globals(const std::string_view text, Config& out) {
             case Section::adb:
                 return set_adb(config, key, value);
             case Section::mim:
-                return set_mim_link(config, key, value);
+                return drop_mim_link(key, value);
             }
             return false;
         });
@@ -1006,9 +981,6 @@ std::string format_globals(const Config& c) {
     out.put("kill_server", yes_no(c.adb_kill_server));
     out.put("path", c.adb_path);
     out.put("first_port", std::to_string(c.adb_first_port));
-
-    out.section("mim");
-    out.put("timeout_ms", c.mim.timeout_ms == 0 ? "" : std::to_string(c.mim.timeout_ms));
     return out.text;
 }
 
@@ -1122,7 +1094,7 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
     if (!error.empty())
         return error;
     // A gain that is only what the pointer speed and the density give (as an
-    // earlier "fill" wrote it) is not a value of its own: it would stay behind
+    // earlier version wrote it from adb) is not a value of its own: it would stay behind
     // when the pointer speed is changed.
     const double calculated = low_speed_gain(device.pointer_speed, device.density_dpi);
     if (device.gain > 0.0 && calculated > 0.0 &&
@@ -1178,7 +1150,6 @@ std::string format_device(const DeviceConfig& d) {
     out.put("pointer_speed", std::to_string(d.pointer_speed));
     if (d.density_dpi > 0)
         out.put("density", std::to_string(d.density_dpi));
-    out.put("read_at", d.read_at);
 
     // Only what the device sets for itself is written below; the rest
     // follows config.ini.

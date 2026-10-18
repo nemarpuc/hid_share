@@ -11,5 +11,7 @@ namespace gui {
 struct App;
 
 void draw_placement(App& app, hids::DeviceConfig& device);
+// Only what a first placement needs: what the device sits next to, and on which side.
+void draw_placement_basics(App& app, hids::DeviceConfig& device);
 
 } // namespace gui

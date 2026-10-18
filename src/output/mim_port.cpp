@@ -23,6 +23,9 @@ namespace {
 // than left to libmimhid's documented fallbacks (docs/API.md there).
 // The search waits this long for each answer, at each rate it tries.
 constexpr uint32_t discover_timeout_ms = 50U;
+// How long the serial link waits for a board's answer to a command, and for a
+// report to leave.
+constexpr uint32_t link_timeout_ms = 500U;
 constexpr uint32_t reconnect_timeout_ms = 3000U;
 constexpr uint32_t close_drain_timeout_ms = 1000U;
 constexpr uint32_t drain_deadline_ms = 600U;
@@ -141,7 +144,6 @@ std::string missing_values(const MimOptions& mim) {
         list += name;
     };
     need(mim.baud != 0, "baud");
-    need(mim.timeout_ms != 0, "timeout_ms");
     need(mim.vendor_id != 0, "vendor_id");
     need(mim.product_id != 0, "product_id");
     need(!mim.manufacturer.empty(), "manufacturer");
@@ -436,8 +438,8 @@ class MimBackend final : public Backend {
         mimhid_device_options device{};
         device.struct_size = static_cast<uint32_t>(sizeof(device));
         device.baud_rate = mim.baud;
-        device.control_timeout_ms = mim.timeout_ms;
-        device.send_timeout_ms = mim.timeout_ms;
+        device.control_timeout_ms = link_timeout_ms;
+        device.send_timeout_ms = link_timeout_ms;
         device.reconnect_timeout_ms = reconnect_timeout_ms;
         // Zero here is the board's own limit.
         device.maximum_report_bytes = 0U;

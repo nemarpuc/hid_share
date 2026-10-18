@@ -133,32 +133,23 @@ device in its own file.
 | Key | Default | |
 | --- | --- | --- |
 | `kill_server` | `true` | stop a running adb server before every scan that was asked for (the one made when the daemon starts, a reload, `rescan`, `connect`), since a server that claimed a phone keeps it from being found; also when a phone's proxy is to start and the server holds its ADB interface (once, then the proxy is tried again), and once more on exit if a proxy was served, so that adb sees the phone over USB again |
-| `path` | empty | the adb program, run only by "fill"; empty uses `PATH` |
+| `path` | empty | the adb program, run only to stop its server (`kill_server`); empty uses `PATH` |
 | `first_port` | `6555` | where the proxy ports start (1024 to 65535, not 5555 to 5585) |
 
-The daemon does not use adb on its own. A device's ADB proxy is **off** until
+The daemon runs adb for one thing only: to stop its server (`kill_server`). Nothing is read
+from a phone through adb. A device's ADB proxy is **off** until
 its `proxy = true` is set (its page in the settings window, or its file); only
 then is the phone's ADB interface served on `127.0.0.1:<port>`, and you run
 `adb connect` yourself. A device's port is `first_port` plus the number of
 devices before it (files are taken in the order of their names) unless its
 file gives `port`; set `port` to keep one fixed.
 
-`fill` (the "Fill from ADB" button, or `hid_share fill DEVICE`) is the one
-use of adb: with the proxy on, it runs `adb connect` to it, reads the
-resolution, rotation, physical size (`dumpsys display`), pointer speed and
-whether pointer acceleration is on, and writes them, with the gain they give
-([MATH.md](MATH.md#gain)), into the device's file. It does not close or
-reopen any device. If the phone is waiting for the "Allow USB debugging"
-answer (a new computer), it waits up to 15 seconds for it, trying again; after
-that, fill again. A value the phone does not give is left as it was and is
-named in the answer.
-
 On Linux with a glibc older than 2.34, or musl, an adb server started by `adb
 connect` can keep the proxy's port bound after the daemon exits (the
 descriptor cannot be closed on `exec` there).
 
 `calibrate` (`hid_share calibrate [DEVICE]`) runs an interactive calibration
-wizard in the terminal without requiring ADB. It resets the cursor to the
+wizard in the terminal. It resets the cursor to the
 top-left corner, lets you move the cursor across the width and height using the
 Space key (tap for 1 count, hold for continuous motion, Backspace to step back,
 Enter to confirm), and directly sets your device's screen dimensions (Width, Height,
@@ -166,21 +157,19 @@ Gain = 1.0, and Accel = off) based on the measured counts and screen rotation
 ([MATH.md](MATH.md#without-adb)). Upon confirmation, the dimensions are saved
 directly into the device's settings file and the daemon is reloaded.
 
-## `[mim]`
+## Boards
 
-How every microcontroller board (a device with `link = mim`) is reached over
-its serial port. Neither value has a default: a board is not opened while one
-is missing, and its status names it.
+A device with `link = mim` is a microcontroller board reached over its serial
+port (libmimhid). Its port and speed are in its own file (`[mim]` below). A
+board that has a file is opened on the port its file names, without searching.
+Other boards are found only when the user asks (`rescan`, the refresh icon of
+the settings window), because the search sends a message to every serial port
+that could be one, at each of libmimhid's line rates. The search measures the
+fastest rate each board's serial adapter carries, and a port in use (by this
+program or another) is passed over.
 
-| Key | Default | |
-| --- | --- | --- |
-| `timeout_ms` | empty | how long the serial link waits for a board's answer, 1 to 60000 |
-
-The ports of the devices that have a file are opened as they are, without
-searching for anything. Boards that have no file are found only when asked
-for (`find_boards`, the "Find boards" button), because the search sends a
-message to every serial port that could be one. It is not made while a board
-is open, as the message would reach the running link.
+The wait for a board's answer is not a setting (500 ms). A `[mim] timeout_ms`
+line in `config.ini`, from before 0.4.0, is read and dropped.
 
 ## Per-device files (`device/<serial>.ini`)
 
@@ -253,12 +242,12 @@ Those keys are still read, and dropped: set the keys again here.
 | `length` | empty | its length in PC pixels; not set, it follows the real sizes |
 | `corner_margin` | `5%` | dead zone at each corner of a monitor's edge (not used beside a device) |
 | `monitor_diagonal_inch` | empty | for a monitor that reports no physical size |
-| `rotation` | empty | `0`, `90`, `180`, `270`: how the device is turned now. It is not followed: set it again (or fill) when the device is turned |
+| `rotation` | empty | `0`, `90`, `180`, `270`: how the device is turned now. It is not followed: set it again when the device is turned |
 | `turn_input` | `0` | how far the picture on the device is turned for the person looking at it (see [MATH.md](MATH.md)); leave at `0` unless the device is mounted turned |
 
 ### `[detected]`
 
-What was read through the device's ADB proxy, or entered by hand:
+What the device's screen is, typed or measured:
 
 | Key | Default | |
 | --- | --- | --- |
@@ -268,14 +257,12 @@ What was read through the device's ADB proxy, or entered by hand:
 | `density` | empty | the density Android lays out with (`wm density`), in dpi |
 | `accel` | empty | `off` or `on`: whether the device's pointer acceleration is on |
 | `gain` | empty | pixels the cursor moves per count at low speed, typed or measured ([MATH.md](MATH.md#gain)); empty: calculated from `pointer_speed` and `density` |
-| `read_at` | empty | date the values were filled from adb |
 
 **What Android's pointer speed changes.** Only `gain`, which follows from it:
 `gain = density / 320 * 0.64 * S[speed] / 10 * 3.19` ([MATH.md](MATH.md#gain)),
 with `density` the value above. The `gain` key is for a gain you typed or
 measured: left empty, the daemon uses that calculated value, so changing
-`pointer_speed` (or filling after changing it on the device) changes the gain
-in use at once. "Fill from ADB" empties `gain` for that reason. The settings
+`pointer_speed` changes the gain in use at once. The settings
 window shows the calculation with its numbers (Screen tab). A `gain` in a file that is only what the speed and density give
 is read as empty. The counts sent do not depend on any of this (the mouse's
 movement is sent as it comes); the gain only tells the daemon where Android's
@@ -284,8 +271,8 @@ the cursor moves further for the same mouse movement, as it would for any USB
 mouse.
 
 The device is not used until `width`, `height`, `rotation`, `diagonal_inch`,
-`accel` and a gain (typed, or `pointer_speed` with `density`) are set, by hand or
-by `fill`; its status names those that are not.
+`accel` and a gain (typed or measured, or `pointer_speed` with `density`) are set; its
+status names those that are not. The Setup tab of the settings window walks through them.
 
 ### `[motion]` (device override)
 
@@ -318,7 +305,7 @@ it.
 
 | Key | Default | |
 | --- | --- | --- |
-| `baud` | empty | the serial line rate of this board, one of libmimhid's rates (115200, 230400, 460800, 921600, 1000000, 1500000, 2000000, 3000000, 4000000). Adding the board from `find_boards` writes the fastest rate the search saw the board and its serial adapter carry; a rate they do not carry is refused when the board is opened. Boards differ, so it is the board's own, not the computer's |
+| `baud` | empty | the serial line rate of this board, one of libmimhid's rates (115200, 230400, 460800, 921600, 1000000, 1500000, 2000000, 3000000, 4000000). Adding the board from the search (`rescan`) writes the fastest rate the search saw the board and its serial adapter carry; a rate they do not carry is refused when the board is opened. Boards differ, so it is the board's own, not the computer's |
 | `port` | empty | the board's serial port: `/dev/ttyUSB0`, a `/dev/serial/by-id/` path (it stays the same when the board is plugged in again) or `COM3`. The device's `serial` is `mim-` and the end of this, with anything a serial may not hold turned into `_`; a file whose serial is another is refused. It is set when the device is added and is not typed in the settings window |
 | `vendor_id`, `product_id` | empty | the ids the board announces to its target, 0x0001 to 0xFFFF |
 | `manufacturer`, `product` | empty | the strings it announces, printable ASCII, at most 31 characters |
@@ -333,8 +320,7 @@ Adding or removing a Node (the mouse, keyboard, media keys or touchscreen) of
 an open board makes the board detach from its target and attach again, which
 the target sees as unplugging and plugging in a device. All the changes of one
 `reload` are made in one such step, and a set that has not changed makes none.
-A board has no ADB interface: `proxy = true` on it is refused, and `fill` is
-for phones.
+A board has no ADB interface: `proxy = true` on it is refused.
 
 ### `[adb]` (device override)
 
@@ -351,7 +337,7 @@ the daemon keeps, so asking never holds up the input. Per device the keys are
 
 | Key | Meaning |
 | --- | --- |
-| `name`, `state`, `status`, `fill`, `reading` | what it is called; `ready`, `error` or `absent`; why it is not ready; the last "fill"; a fill is under way |
+| `name`, `state`, `status` | what it is called; `ready`, `error` or `absent`; why it is not ready |
 | `serial`, `link`, `proxy` | its serial; `aoa` or `mim`; the proxy port or `off` |
 | `wanted`, `plugged` | `yes` when `connect` was asked for it and has not been undone; `yes` when the last scan saw it plugged in |
 | `locked` | `yes` while its lock key holds the input on it; only for a device that is open |
@@ -368,7 +354,7 @@ Top level: `protocol` (the version of this format), `state` (`pc`, `android`,
 `paused`, `starting`), `active`, `last_used`, `backend`,
 `local_hotkeys`, `monitor.N`, `new.<serial>`, `new_link.<serial>` (`aoa` or `mim`: how it
 was found), `config_error`, `capture_error`,
-`scan_error`, `files_version`.
+`scan_error`.
 
 ## Commands
 
@@ -378,16 +364,14 @@ was found), `config_error`, `capture_error`,
 | Command | |
 | --- | --- |
 | `status` | state, backend, monitors, configured devices and newly detected devices; see [Status](#status) |
-| `find_boards` | search the serial ports for boards that have no file, measure the fastest line rate each one's serial adapter carries, and list them as `new.<serial>`; a port in use (by this program or another) is passed over |
 | `connect SERIAL\|NAME` | open a device. One that has a file is opened as it is; a plugged-in device that has none is given a file first (nothing is read from it). Nothing else is touched. The daemon opens no device by itself: not when it starts, not on `reload`, and not when a device that has a file shows up in a scan. A device that was connected by this command and drops out (unplugged, a glitch) is opened again when it comes back, until `disconnect` or `forget` |
 | `disconnect SERIAL\|NAME` | close a device and leave it closed |
-| `fill SERIAL\|NAME` | read a connected device through its ADB proxy (which has to be on) and write what it says into its file; nothing is closed or reopened |
 | `forget SERIAL\|NAME` | remove a device and its configuration file |
 | `enter [SERIAL\|NAME]` | move the input to that device (or the last used device) |
 | `release` | bring input back to the computer |
 | `pause`, `resume` | pause or resume cursor crossing |
 | `resync` | re-reference the corner reference on the next crossing |
-| `rescan` | look for devices now and wait for the result. A scan is made when the daemon starts and when asked (no automatic background scanning). A scan sends a request to every USB device, so none is made while a device has the input |
+| `rescan` | look for phones and boards now and wait for the result. A scan is made when the daemon starts and when asked (no automatic background scanning); only the one asked for also searches the serial ports for boards ([Boards](#boards)). A scan sends a request to every USB device, so none is made while a device has the input |
 | `reload` | read the configuration files again; a device that is open stays open unless how it was opened changed (the mouse buttons, the proxy, its port), and then it is opened again; its mouse, keyboard, media and touch inputs are added or removed without opening it again; no other device is opened |
 | `media KEY [SERIAL\|NAME]` | send a media key (`previous`, `play_pause`, `next`, `brightness_up`, `brightness_down`, `volume_up`, `volume_down`); without a device it goes to the one that has the input, else the last one used |
 | `probe SERIAL\|NAME corner` | send the device's cursor to its top left corner |

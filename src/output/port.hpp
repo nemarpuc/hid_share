@@ -35,7 +35,6 @@ struct TargetInfo {
 // that are missing.
 struct MimOptions {
     uint32_t baud{};
-    uint32_t timeout_ms{};
     uint16_t vendor_id{};
     uint16_t product_id{};
     // At most 31 printable ASCII characters each.

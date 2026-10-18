@@ -88,13 +88,9 @@ constexpr ConfigKey table[] = {
     {S::computer, "adb", "kill_server", "Adb", K::boolean, "", "", "true",
      "Stop a running adb server that holds the ADB interface of a phone whose proxy is to start."},
     {S::computer, "adb", "path", "Adb", K::text, "", "", "",
-     "The adb program, run only by fill; empty uses PATH."},
+     "The adb program, run only to stop its server; empty uses PATH."},
     {S::computer, "adb", "first_port", "Adb", K::integer, "1024..65535", "", "6555",
      "Where the proxy ports start (not 5555 to 5585)."},
-
-    // [mim]
-    {S::computer, "mim", "timeout_ms", "Board", K::integer, "1..60000", "ms", "",
-     "How long the serial link waits for a board's answer; there is no default."},
 
     // device file [device]
     {S::device, "device", "serial", "Device", K::text, "", "", "",
@@ -147,8 +143,6 @@ constexpr ConfigKey table[] = {
     {S::device, "detected", "gain", "Android screen", K::real, "0.05..50", "px/count", "",
      "Pixels the cursor moves per count at low speed, typed or measured; empty is calculated from "
      "pointer_speed and density."},
-    {S::device, "detected", "read_at", "Android screen", K::text, "", "", "",
-     "The date the values were filled from adb.", true},
 
     // [placement]
     {S::device, "placement", "monitor", "Placement", K::text, "", "", "",
@@ -179,8 +173,8 @@ constexpr ConfigKey table[] = {
      "part, so it is set when the device is added.", true},
     {S::device, "mim", "baud", "Board", K::integer, "1..4000000", "baud", "",
      "The serial line rate of this board, one of libmimhid's rates (115200 to 4000000). Adding "
-     "the board from Find boards writes the fastest rate the search saw the board and its serial "
-     "adapter carry; there is no default."},
+     "the board from the search (rescan) writes the fastest rate the search saw the board and "
+     "its serial adapter carry; there is no default."},
     {S::device, "usb", "vendor_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",
      "The vendor id the board announces to its target; there is no default."},
     {S::device, "usb", "product_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",
@@ -234,14 +228,11 @@ constexpr StatusKey status_table[] = {
     {false, "scan_error", "Host", "", "",
      "Why the last scan could not list everything, for example that boards are not searched for "
      "while one is open."},
-    {false, "files_version", "Files", "", "", "Counts the times the daemon wrote a device's file."},
 
     // Per device.
     {true, "name", "Device", "", "", "What it is called."},
     {true, "state", "Device", "", "", "ready, error or absent."},
     {true, "status", "Device", "", "", "Why it is not ready."},
-    {true, "fill", "Device", "", "", "The last fill: ok or error, with what it said."},
-    {true, "reading", "Device", "", "", "1 while a fill is under way."},
     {true, "wanted", "Device", "", "",
      "yes when connect was asked for it and has not been undone."},
     {true, "plugged", "Device", "", "", "yes when the last scan saw it plugged in."},

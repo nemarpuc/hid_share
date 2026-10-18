@@ -192,14 +192,13 @@ void device_files(App& app, DeviceConfig& device) {
 
 } // namespace
 
-// The steps for a device that has no USB debugging: the cursor is stepped to
-// the corner by raw counts, and the size follows from where it stops.
-// Calibration wizard without ADB: measures exact gain by stepping to screen edges.
+// The cursor is stepped to the corner by raw counts, and the size follows from
+// where it stops: measures the exact gain by stepping to the screen edges.
 void draw_probe(App& app, DeviceConfig& device) {
     if (app.probing && app.probe_serial != device.serial)
         app.probing = false;
 
-    look::heading("Screen Calibration Wizard (without ADB)");
+    look::heading("Screen Calibration Wizard");
     look::dim("Directly measures screen bounds by stepping the cursor to each edge.\n"
               "This sets Width, Height, and Gain = 1.0 without needing manual resolution lookup.\n"
               "Ensure pointer acceleration is OFF on the device. If you change its pointer speed\n"

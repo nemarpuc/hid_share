@@ -32,7 +32,6 @@ void load_config(App& app) {
     if (app.config_error.empty())
         app.config = std::move(loaded);
     app.dirty = false;
-    app.stale = false;
     app.field_errors.clear();
     app.editing.clear();
     const size_t again =
@@ -126,26 +125,6 @@ void poll_daemon(App& app) {
                          : found->second == "aoa" ? LinkKind::aoa
                                                   : LinkKind::unset;
     }
-    // The daemon wrote a device's file (a fill): what the window shows is
-    // read again, unless it holds edits of its own, which are not overwritten.
-    const std::string version =
-        app.status.count("files_version") != 0 ? app.status["files_version"] : std::string();
-    if (!version.empty() && version != app.files_version) {
-        const bool first = app.files_version.empty();
-        if (!app.dirty) {
-            app.files_version = version;
-            if (!first)
-                load_config(app);
-        } else if (!first) {
-            app.files_version = version;
-            app.failed = true;
-            app.stale = true;
-            app.message =
-                "A device's file was changed by the daemon. Discard your changes to read it.";
-        } else {
-            app.files_version = version;
-        }
-    }
     // Still starting: it has no monitors to report yet.
     if (app.monitors.empty())
         app.monitors = toolkit_monitors();
@@ -170,10 +149,6 @@ void apply(App& app) {
     app.failed = true;
     if (!app.config_error.empty()) {
         app.message = "Not saved: the files on disk could not be read (" + app.config_error + ").";
-        return;
-    }
-    if (app.stale) {
-        app.message = "Not saved: a file was changed meanwhile. Discard changes to read it.";
         return;
     }
     if (!app.field_errors.empty()) {
@@ -234,28 +209,19 @@ void rescan_devices(App& app) {
     const std::string answer = command(app, "rescan");
     app.failed = answer != "ok";
     app.message = app.failed ? (answer.rfind("error=", 0) == 0 ? answer.substr(6) : answer)
-                             : "Searched for devices.";
+                             : "Searched for phones and boards.";
     poll_daemon(app);
-}
-
-void find_boards(App& app) {
-    const std::string answer = command(app, "find_boards");
-    app.failed = answer != "ok";
-    app.message = app.failed ? (answer.rfind("error=", 0) == 0 ? answer.substr(6) : answer)
-                             : "Searched the serial ports for boards.";
-    poll_daemon(app);
-    // A search that failed says so in the scan.
-    const auto refused = app.status.find("scan_error");
-    if (!app.failed && refused != app.status.end() &&
-        refused->second.find("boards (MIM): ") != std::string::npos) {
+    // A search that could not look somewhere says so.
+    const auto missed = app.status.find("scan_error");
+    if (!app.failed && missed != app.status.end() && !missed->second.empty()) {
         app.failed = true;
-        app.message = refused->second;
+        app.message = missed->second;
     }
 }
 
 // "Connect" on a plugged-in device: it gets a file of its own and is opened.
-// Nothing is read from it and no other device is touched; its values are
-// entered, or filled from adb once its proxy is on.
+// Nothing is read from it and no other device is touched; its Setup tab says
+// what is left to enter.
 void connect_device(App& app, const std::string& serial) {
     app.failed = true;
     if (!app.daemon_running) {
@@ -278,75 +244,15 @@ void connect_device(App& app, const std::string& serial) {
     const size_t index = find_device(app.config, serial);
     const bool board = index < app.config.devices.size() &&
                        app.config.devices[index].link == LinkKind::mim;
-    app.message = board ? "Added. Enter the board's USB values (USB tab) and the serial speed "
-                          "(Computer, Board tab), then connect it."
-                        : "Added. Enter its values, or turn its ADB proxy on and fill them from adb.";
+    app.message = board ? "Added. The Setup tab says what is left to do."
+                        : "Added. The Setup tab says what is left to do.";
     if (index < app.config.devices.size()) {
         app.device = index;
         app.computer = false;
+        // The first device is set up from the start; later ones keep the tab in use.
+        if (app.config.devices.size() == 1)
+            app.device_tab = 0;
     }
-}
-
-// "Fill from adb": the daemon reads the device through its ADB proxy (which
-// has to be on) and writes what the phone says into its file. This window
-// only asks, waits, and reads the files again once that is done.
-void start_fill(App& app, const std::string& serial) {
-    app.failed = true;
-    if (!app.daemon_running) {
-        app.message = "Start the daemon first.";
-        return;
-    }
-    // The daemon rewrites the device's file; nothing unsaved may be lost to
-    // that.
-    if (app.dirty) {
-        app.message = "Apply or revert your changes first.";
-        return;
-    }
-    const std::string answer = command(app, "fill " + serial);
-    if (answer != "ok") {
-        app.message = answer.rfind("error=", 0) == 0 ? answer.substr(6) : answer;
-        return;
-    }
-    app.failed = false;
-    app.filling = serial;
-    app.filling_until = ImGui::GetTime() + 60.0;
-    // The reading is already under way: the status that says so is read now,
-    // not a second from now, or the old one would look like an ended reading.
-    poll_daemon(app);
-    app.message = "Reading " + serial + " through adb...";
-}
-
-void continue_fill(App& app) {
-    if (app.filling.empty())
-        return;
-    const double now = ImGui::GetTime();
-    app.next_poll = std::min(app.next_poll, now + 0.4);
-    const std::string prefix = "device." + app.filling + ".";
-    const auto value = [&](const char* key) {
-        const auto found = app.status.find(prefix + key);
-        return found != app.status.end() ? found->second : std::string();
-    };
-    const bool reading = value("reading") == "1";
-    if (reading && now < app.filling_until)
-        return;
-    const std::string serial = app.filling;
-    app.filling.clear();
-    // What the daemon wrote is the config now, unless the window holds edits
-    // made meanwhile: those are not overwritten.
-    if (!app.dirty)
-        load_config(app);
-    const std::string result = value("fill");
-    if (reading || result.empty()) {
-        app.failed = true;
-        app.message = "The daemon gave no result for the reading (is it the current version?).";
-        return;
-    }
-    const bool ok = result.rfind("ok ", 0) == 0;
-    app.failed = !ok;
-    // The text after "ok " or "error ".
-    app.message = (ok ? "" : "Not filled: ") + result.substr(result.find(' ') + 1);
-    if (!ok && app.message.find("Not filled: could not") == 0)
-        app.message = "Not filled: " + result.substr(result.find(' ') + 1);
 }
 
 std::string status_of(const App& app, const DeviceConfig& device, const char* key) {

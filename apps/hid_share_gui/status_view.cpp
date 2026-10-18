@@ -165,11 +165,9 @@ void draw_status(App& app, const hids::DeviceConfig* device) {
         return;
     }
     // What is wrong comes first.
-    for (const std::string_view key : {"config_error", "capture_error", "status", "fill"}) {
+    for (const std::string_view key : {"config_error", "capture_error", "status"}) {
         const auto found = app.status.find(prefix + std::string(key));
         if (found == app.status.end() || found->second.empty())
-            continue;
-        if (key == "fill" && found->second.rfind("error", 0) != 0)
             continue;
         if (key == "status" && found->second == "not connected")
             continue;

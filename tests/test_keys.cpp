@@ -217,7 +217,6 @@ TEST_CASE("every key in the table is accepted by the parser and read back") {
         {"detected.accel", "off"},
         {"detected.density", "320"},
         {"motion.report_rate_hz", "500"},
-        {"detected.read_at", "2026-10-06"},
         {"placement.turn_input", "90"},
         {"placement.corner_margin", "10%"},
         {"adb.path", "/usr/bin/adb"},
@@ -227,7 +226,6 @@ TEST_CASE("every key in the table is accepted by the parser and read back") {
         {"usb.max_power_ma", "480"},
         {"mim.baud", "3000000"},
         {"mim.port", "/dev/ttyUSB1"},
-        {"mim.timeout_ms", "500"},
     };
     for (const ConfigKey& key : config_keys()) {
         const std::string id = std::string(key.section) + "." + key.key;
@@ -345,9 +343,8 @@ TEST_CASE("only the keys that make no sense to type are read-only") {
     for (const ConfigKey& key : config_keys()) {
         const std::string id = std::string(key.section) + "." + key.key;
         // The serial names the file; link and the port are how the device was found, and
-        // the port makes the serial; read_at is the day the values were read from adb.
-        const bool expected = id == "device.serial" || id == "device.link" ||
-                              id == "mim.port" || id == "detected.read_at";
+        // the port makes the serial.
+        const bool expected = id == "device.serial" || id == "device.link" || id == "mim.port";
         CHECK_MESSAGE(key.read_only == expected, id);
     }
 }

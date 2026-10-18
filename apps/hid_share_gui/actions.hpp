@@ -23,7 +23,7 @@ void draw_sidebar_buttons(App& app);
 // How much room they take.
 [[nodiscard]] float sidebar_buttons_height(const App& app);
 
-// The steps that set a device up by eye, for one without USB debugging.
+// The steps that measure a device's screen: the cursor is stepped to the edges by raw counts.
 void draw_probe(App& app, hids::DeviceConfig& device);
 
 // The questions that are open. Called once a frame.

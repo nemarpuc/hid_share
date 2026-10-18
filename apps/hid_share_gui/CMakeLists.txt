@@ -68,6 +68,7 @@ add_executable(hid_share_gui WIN32
   mice.cpp
   page.cpp
   placement.cpp
+  setup.cpp
   status_view.cpp)
 # hid_share_output is linked for its process launcher only.
 target_link_libraries(hid_share_gui PRIVATE hid_share_control hid_share_output

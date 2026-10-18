@@ -7,8 +7,8 @@
 #include "app.hpp"
 #include "field.hpp"
 #include "look.hpp"
-#include "mice.hpp"
 #include "placement.hpp"
+#include "setup.hpp"
 #include "status_view.hpp"
 
 #include <algorithm>
@@ -24,36 +24,36 @@ using namespace hids;
 namespace gui {
 namespace {
 
-enum class ComputerTab { general, hid, motion, board, adb, tools, status };
+enum class ComputerTab { general, hid, motion, adb, tools, status };
 struct ComputerTabEntry {
     const char* label;
     ComputerTab id;
 };
 constexpr ComputerTabEntry computer_tabs[] = {
     {"General", ComputerTab::general}, {"HID", ComputerTab::hid},
-    {"Motion", ComputerTab::motion},   {"Board (MIM)", ComputerTab::board},
-    {"ADB (Android)", ComputerTab::adb}, {"Tools", ComputerTab::tools},
-    {"Status", ComputerTab::status}};
+    {"Motion", ComputerTab::motion},   {"ADB (Android)", ComputerTab::adb},
+    {"Tools", ComputerTab::tools},     {"Status", ComputerTab::status}};
 
-enum class DeviceTab { device, keys, hid, usb, placement, screen, motion, tools, status, reports };
+enum class DeviceTab { setup, device, keys, hid, usb, placement, screen, motion, tools, status, reports };
 struct DeviceTabEntry {
     const char* label;
     DeviceTab id;
 };
-// A phone has its ADB on the Device tab and its screen read through adb; a
-// board has the USB values it announces on a tab of its own.
+// Setup is first: it says what is left to do. A phone has its ADB proxy on the
+// Device tab; a board has the USB values it announces on a tab of its own.
 constexpr DeviceTabEntry phone_tabs[] = {
-    {"Device", DeviceTab::device},       {"Keys", DeviceTab::keys},
-    {"HID", DeviceTab::hid},             {"Placement", DeviceTab::placement},
-    {"Screen", DeviceTab::screen},       {"Motion", DeviceTab::motion},
-    {"Tools", DeviceTab::tools},         {"Status", DeviceTab::status},
-    {"Reports", DeviceTab::reports}};
-constexpr DeviceTabEntry board_tabs[] = {
-    {"Device", DeviceTab::device},       {"Keys", DeviceTab::keys},
-    {"HID", DeviceTab::hid},             {"USB", DeviceTab::usb},
+    {"Setup", DeviceTab::setup},         {"Device", DeviceTab::device},
+    {"Keys", DeviceTab::keys},           {"HID", DeviceTab::hid},
     {"Placement", DeviceTab::placement}, {"Screen", DeviceTab::screen},
     {"Motion", DeviceTab::motion},       {"Tools", DeviceTab::tools},
     {"Status", DeviceTab::status},       {"Reports", DeviceTab::reports}};
+constexpr DeviceTabEntry board_tabs[] = {
+    {"Setup", DeviceTab::setup},         {"Device", DeviceTab::device},
+    {"Keys", DeviceTab::keys},           {"HID", DeviceTab::hid},
+    {"USB", DeviceTab::usb},             {"Placement", DeviceTab::placement},
+    {"Screen", DeviceTab::screen},       {"Motion", DeviceTab::motion},
+    {"Tools", DeviceTab::tools},         {"Status", DeviceTab::status},
+    {"Reports", DeviceTab::reports}};
 
 [[nodiscard]] bool is_board(const DeviceConfig& device) noexcept {
     return device.link == LinkKind::mim;
@@ -66,24 +66,6 @@ constexpr DeviceTabEntry board_tabs[] = {
 
 [[nodiscard]] const char* kind_tag(const LinkKind link) noexcept {
     return link == LinkKind::mim ? "MIM" : link == LinkKind::aoa ? "AOA" : "link not set";
-}
-
-// What a board cannot be opened without and has not been given.
-[[nodiscard]] std::string board_missing(const App& app, const DeviceConfig& device) {
-    std::string list;
-    const auto need = [&](const bool given, const char* name) {
-        if (given)
-            return;
-        list += (list.empty() ? "" : ", ") + std::string(name);
-    };
-    need(device.mim.baud != 0, "serial speed");
-    need(app.config.mim.timeout_ms != 0, "link timeout (Computer, Board tab)");
-    need(!device.mim.port.empty(), "serial port");
-    need(device.mim.vendor_id != 0, "vendor id");
-    need(device.mim.product_id != 0, "product id");
-    need(!device.mim.manufacturer.empty(), "manufacturer");
-    need(!device.mim.product.empty(), "product");
-    return list;
 }
 
 // Every row of a heading of the tables that belongs on this page.
@@ -124,7 +106,7 @@ void draw_proxy_command(App& app, const DeviceConfig& device) {
 void draw_gain_line(const DeviceConfig& device) {
     const double in_use = effective_gain(device);
     if (in_use <= 0.0) {
-        look::dim("Gain in use: not known yet (enter the density, or fill from adb).");
+        look::dim("Gain in use: not known yet (measure it with the wizard, or type it).");
         return;
     }
     char text[240];
@@ -140,11 +122,8 @@ void draw_gain_line(const DeviceConfig& device) {
 
 void draw_device_screen(App& app, DeviceConfig& device) {
     look::heading("Display Resolution");
-    look::dim(is_board(device)
-                  ? "Screen size of the target in pixels, or total mouse travel counts when\n"
-                    "calibrated. Configured automatically by the wizard below."
-                  : "Screen size in pixels (when read via ADB) or total mouse travel counts\n"
-                    "(when calibrated without ADB). Configured automatically by the wizard below.");
+    look::dim("The screen size in pixels, or the total mouse travel in counts when it is measured\n"
+              "with the calibration wizard below.");
     draw_row(app, KeyScope::device, "detected", "width", &device, "Width");
     draw_row(app, KeyScope::device, "detected", "height", &device, "Height");
 
@@ -165,33 +144,15 @@ void draw_device_screen(App& app, DeviceConfig& device) {
     draw_row(app, KeyScope::both, "motion", "entry", &device, "Cursor mode");
 
     ImGui::Spacing();
-    if (is_board(device)) {
-        look::dim("A board's target is not read through adb: enter the size, or use the wizard.\n"
-                  "Turn the pointer acceleration of the target off, so a count always moves the\n"
-                  "cursor the same distance, and set it off here too.");
-        draw_row(app, KeyScope::device, "detected", "diagonal_inch", &device, "Diagonal size");
-        draw_row(app, KeyScope::device, "detected", "accel", &device, "Pointer acceleration");
-        return;
-    }
-    if (ImGui::CollapsingHeader("Advanced / ADB details")) {
-        const std::string proxy = status_of(app, device, "proxy");
-        const bool proxy_ready = !proxy.empty() && proxy != "off";
-        ImGui::BeginDisabled(!app.daemon_running || !proxy_ready || !app.filling.empty());
-        if (ImGui::Button("Fill from ADB"))
-            start_fill(app, device.serial);
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        if (!proxy_ready)
-            look::dim("Connect the device and turn its ADB proxy on first.");
-        else
-            look::dim("Reads values automatically from Android via ADB.");
-
-        ImGui::Spacing();
-        draw_row(app, KeyScope::device, "detected", "diagonal_inch", &device, "Diagonal size");
+    look::dim("Turn the pointer acceleration of the device off, so a count always moves the\n"
+              "cursor the same distance, and set it off here too.");
+    draw_row(app, KeyScope::device, "detected", "diagonal_inch", &device, "Diagonal size");
+    draw_row(app, KeyScope::device, "detected", "accel", &device, "Pointer acceleration");
+    if (!is_board(device) && ImGui::CollapsingHeader("Android pointer settings")) {
+        look::dim("Instead of measuring the gain, it can follow from Android's pointer speed and\n"
+                  "the density it lays out with (docs/MATH.md).");
         draw_row(app, KeyScope::device, "detected", "density", &device, "Screen density");
         draw_row(app, KeyScope::device, "detected", "pointer_speed", &device, "Android pointer speed");
-        draw_row(app, KeyScope::device, "detected", "accel", &device, "Pointer acceleration");
-        draw_row(app, KeyScope::device, "detected", "read_at", &device, "Last read at");
     }
 }
 
@@ -207,7 +168,7 @@ void draw_device_tab(App& app, DeviceConfig& device) {
     if (is_board(device)) {
         draw_row(app, KeyScope::device, "mim", "port", &device, "Serial port");
         draw_row(app, KeyScope::device, "mim", "baud", &device, "Serial speed");
-        const std::string missing = board_missing(app, device);
+        const std::string missing = board_missing(device);
         if (!missing.empty())
             look::dim(("Not set: " + missing + ". It is not opened until they are.").c_str());
         return;
@@ -254,75 +215,30 @@ void draw_hid_tab(App& app, DeviceConfig& device) {
     }
 }
 
-// Gives the board the identity of a mouse or touchscreen that is plugged in here: its ids
-// and everything else it announces.
-void draw_copy_mouse(App& app, DeviceConfig& device) {
-    if (ImGui::Button("Copy from a plugged-in mouse or touchscreen...")) {
-        app.mice = list_mice();
-        ImGui::OpenPopup("copy_mouse");
-    }
-    if (!ImGui::BeginPopup("copy_mouse"))
-        return;
-    if (app.mice.empty())
-        ImGui::TextUnformatted("No USB mouse or touchscreen found (this works on Linux only).");
-    for (const Mouse& mouse : app.mice) {
-        char label[192];
-        std::snprintf(label, sizeof label, "%s: %s  (%04x:%04x)",
-                      mouse.kind == PointerKind::mouse ? "mouse" : "touchscreen",
-                      mouse.name.c_str(), mouse.vendor_id, mouse.product_id);
-        if (!ImGui::Selectable(label))
-            continue;
-        // What the device announces is what the board announces: a value it does
-        // not give is taken off. One that cannot be taken keeps the parser's reason
-        // on its row.
-        const auto put = [&](const char* const name, const std::string& value) {
-            const ConfigKey& key = *find_config_key(KeyScope::device, "usb", name);
-            return value.empty() ? clear_field(app, key, &device)
-                                 : set_field(app, key, &device, value);
-        };
-        const auto hex = [](const unsigned value) {
-            char text[16];
-            std::snprintf(text, sizeof text, "0x%04x", value);
-            return std::string(value != 0 ? text : "");
-        };
-        bool all = true;
-        all &= put("vendor_id", hex(mouse.vendor_id));
-        all &= put("product_id", hex(mouse.product_id));
-        all &= put("manufacturer", mouse.manufacturer);
-        all &= put("product", mouse.product);
-        all &= put("serial", mouse.serial);
-        all &= put("configuration", mouse.configuration);
-        all &= put("bcd_device", hex(mouse.bcd_device));
-        all &= put("max_power_ma",
-                   mouse.max_power_ma != 0 ? std::to_string(mouse.max_power_ma) : std::string());
-        all &= put("self_powered", mouse.self_powered ? "true" : "false");
-        all &= put("remote_wakeup", mouse.remote_wakeup ? "true" : "false");
-        app.failed = !all;
-        app.message = all ? "Copied. Apply, then disconnect and connect the board."
-                          : "Copied what could be; the rows with a reason were refused.";
-    }
-    ImGui::EndPopup();
-}
-
 void draw_usb_tab(App& app, DeviceConfig& device) {
     look::dim("What the board announces to its target as the USB device it is. None of these has "
               "a default, and no maker's name is assumed: the board is not opened while the "
               "ids and the two strings are empty.");
+    draw_copy_mouse(app, device);
+    ImGui::Spacing();
     draw_row(app, KeyScope::device, "usb", "vendor_id", &device, "Vendor id (0x0001-0xFFFF)");
     draw_row(app, KeyScope::device, "usb", "product_id", &device, "Product id (0x0001-0xFFFF)");
     draw_row(app, KeyScope::device, "usb", "manufacturer", &device, "Manufacturer");
     draw_row(app, KeyScope::device, "usb", "product", &device, "Product");
-    draw_row(app, KeyScope::device, "usb", "serial", &device, "Serial number announced");
-    draw_row(app, KeyScope::device, "usb", "serial_from_chip_id", &device,
-             "Use the chip's id as the serial number");
-    draw_row(app, KeyScope::device, "usb", "configuration", &device, "Configuration string");
-    draw_row(app, KeyScope::device, "usb", "bcd_device", &device, "Device release (empty: 0x0100)");
-    draw_row(app, KeyScope::device, "usb", "max_power_ma", &device, "Current drawn (empty: 100)");
-    draw_row(app, KeyScope::device, "usb", "self_powered", &device, "Self powered");
-    draw_row(app, KeyScope::device, "usb", "remote_wakeup", &device, "Can wake the target");
+    if (ImGui::CollapsingHeader("Advanced")) {
+        draw_row(app, KeyScope::device, "usb", "serial", &device, "Serial number announced");
+        draw_row(app, KeyScope::device, "usb", "serial_from_chip_id", &device,
+                 "Use the chip's id as the serial number");
+        draw_row(app, KeyScope::device, "usb", "configuration", &device, "Configuration string");
+        draw_row(app, KeyScope::device, "usb", "bcd_device", &device,
+                 "Device release (empty: 0x0100)");
+        draw_row(app, KeyScope::device, "usb", "max_power_ma", &device,
+                 "Current drawn (empty: 100)");
+        draw_row(app, KeyScope::device, "usb", "self_powered", &device, "Self powered");
+        draw_row(app, KeyScope::device, "usb", "remote_wakeup", &device, "Can wake the target");
+    }
     look::dim("A change here takes the board off its target and puts it back: apply it, then "
               "disconnect and connect the board.");
-    draw_copy_mouse(app, device);
 }
 
 // The place of the remembered tab in this device's tabs: the first when it has
@@ -339,6 +255,9 @@ void draw_usb_tab(App& app, DeviceConfig& device) {
 void draw_device_page(App& app, DeviceConfig& device) {
     const std::span<const DeviceTabEntry> tabs = tabs_of(device);
     switch (tabs[tab_place(app, device)].id) {
+    case DeviceTab::setup:
+        draw_setup(app, device);
+        break;
     case DeviceTab::device:
         draw_device_tab(app, device);
         break;
@@ -381,6 +300,10 @@ void draw_computer_page(App& app) {
     const size_t at = std::min(static_cast<size_t>(std::max(app.computer_tab, 0)), tabs.size() - 1);
     switch (tabs[at].id) {
     case ComputerTab::general:
+        if (app.config.devices.empty()) {
+            draw_getting_started(app);
+            ImGui::Spacing();
+        }
         draw_group(app, "General", nullptr);
         draw_row(app, KeyScope::computer, "mouse", "buttons", nullptr, "Mouse buttons");
         draw_row(app, KeyScope::computer, "mouse", "button_map", nullptr, "Button map");
@@ -413,25 +336,6 @@ void draw_computer_page(App& app) {
         break;
     case ComputerTab::motion:
         draw_group(app, "Motion", nullptr);
-        break;
-    case ComputerTab::board:
-        look::dim("How long the serial link waits for a board. It has no default: a board is not "
-                  "opened while it is empty. The serial speed is each board's own (its Device tab).");
-        draw_row(app, KeyScope::computer, "mim", "timeout_ms", nullptr, "Link timeout");
-        ImGui::Spacing();
-        look::heading("Finding boards");
-        look::dim("A board that has a file is opened on the port its file names, without "
-                  "searching. Looking for others sends a message to every serial port that could "
-                  "be a board, so it is done only when you ask; ports in use are passed over. It "
-                  "also measures the fastest serial speed each board's adapter carries.");
-        ImGui::BeginDisabled(!app.daemon_running);
-        if (ImGui::Button("Find boards"))
-            find_boards(app);
-        ImGui::EndDisabled();
-        if (app.status.count("scan_error") != 0) {
-            ImGui::Spacing();
-            ImGui::TextWrapped("ERR: %s", app.status["scan_error"].c_str());
-        }
         break;
     case ComputerTab::adb:
         look::dim("Only phones (AOA) use adb.");
@@ -470,14 +374,14 @@ void draw_main(App& app) {
     ImGui::PushID("tabs");
     if (device != nullptr) {
         const std::span<const DeviceTabEntry> tabs = tabs_of(*device);
-        std::array<const char*, 10> names{};
+        std::array<const char*, 11> names{};
         for (size_t each = 0; each < tabs.size(); ++each)
             names[each] = tabs[each].label;
         const int chosen = look::choose(names.data(), static_cast<int>(tabs.size()),
                                         static_cast<int>(tab_place(app, *device)));
         app.device_tab = static_cast<int>(tabs[static_cast<size_t>(chosen)].id);
     } else {
-        std::array<const char*, 7> names{};
+        std::array<const char*, 6> names{};
         for (size_t each = 0; each < std::size(computer_tabs); ++each)
             names[each] = computer_tabs[each].label;
         app.computer_tab = look::choose(names.data(), static_cast<int>(names.size()),
@@ -547,7 +451,9 @@ void draw_list(App& app) {
     ImGui::SameLine();
     ImGui::SetCursorPosX(
         std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - side));
-    if (look::icon_button_refresh("##rescan_devices", "Search for devices"))
+    if (look::icon_button_refresh("##rescan_devices",
+                                  "Search for phones and boards. Every serial port is asked "
+                                  "whether a board answers; ports in use are passed over."))
         rescan_devices(app);
 
     // A device is shown as connected when it is plugged in or has been opened.
@@ -570,17 +476,6 @@ void draw_list(App& app) {
     ImGui::Spacing();
     ImGui::AlignTextToFramePadding();
     look::dim("boards (MIM)");
-    ImGui::SameLine();
-    const float find_width = ImGui::CalcTextSize("Find").x + ImGui::GetStyle().FramePadding.x * 2.0F;
-    ImGui::SetCursorPosX(
-        std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - find_width));
-    ImGui::PushID("find_boards");
-    if (ImGui::SmallButton("Find"))
-        find_boards(app);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Search the serial ports for boards. Done only when asked; ports "
-                          "in use are passed over.");
-    ImGui::PopID();
     for (const size_t index : boards)
         draw_device_row(app, index, false);
     draw_fresh_rows(app, LinkKind::mim);
@@ -634,7 +529,7 @@ void draw_footer(App& app) {
     ImGui::SameLine();
     // Not held back by "unsaved": the first edit of a row is committed in the same
     // frame a click on this button starts, after this has been drawn.
-    ImGui::BeginDisabled(!app.config_error.empty() || !app.field_errors.empty() || app.stale);
+    ImGui::BeginDisabled(!app.config_error.empty() || !app.field_errors.empty());
     if (ImGui::Button("Apply"))
         apply(app);
     ImGui::EndDisabled();
@@ -643,7 +538,6 @@ void draw_footer(App& app) {
 } // namespace
 
 void draw_window(App& app) {
-    continue_fill(app);
     const ImGuiViewport* const viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);

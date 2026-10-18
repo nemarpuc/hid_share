@@ -173,20 +173,18 @@ struct DeviceConfig {
     int rotation{-1};
     int mount_rotation{};
 
-    // What "fill" read from the device; any of it may be set by hand.
+    // What the device's screen is, typed or measured.
     int width{};
     int height{};
     double diagonal_inch{};
     int pointer_speed{};
     // The density Android lays out with (`wm density`), in dpi; 0 when not
-    // read. With the pointer speed it gives the gain at low speed.
+    // set. With the pointer speed it gives the gain at low speed.
     int density_dpi{};
     AccelSetting accel{AccelSetting::automatic};
     // Pixels the cursor moves per count at low speed, when it is typed or
     // measured; 0 follows from the pointer speed and the density.
     double gain{};
-    // The day it was read, as text; empty when it never was.
-    std::string read_at;
 
     MotionPatch motion;
     std::optional<bool> mouse;
@@ -198,11 +196,6 @@ struct DeviceConfig {
     // Serve its ADB interface on adb_port (see docs/CONFIG.md). Off until it
     // is switched on by hand.
     bool adb_proxy{};
-};
-
-// The serial link to the boards, for every board; 0 when not set.
-struct MimLink {
-    uint32_t timeout_ms{};
 };
 
 struct Config {
@@ -225,11 +218,9 @@ struct Config {
     // Stop a running adb server that holds a phone's ADB interface, when a
     // device's proxy is to be started and cannot be.
     bool adb_kill_server{true};
-    // The adb program, for "fill"; empty looks it up on PATH.
+    // The adb program, run to stop its server; empty looks it up on PATH.
     std::string adb_path;
     uint16_t adb_first_port{6555};
-
-    MimLink mim;
 
     std::vector<DeviceConfig> devices;
 };
@@ -247,8 +238,6 @@ struct Config {
 // `link = mim` has this as its serial. Empty for an empty port.
 [[nodiscard]] std::string mim_serial_of(std::string_view port);
 [[nodiscard]] bool valid_name(std::string_view text) noexcept;
-// A name made valid: what is not allowed is dropped, the rest cut to length.
-[[nodiscard]] std::string clean_name(std::string_view text);
 
 // config.ini: everything but the devices. Empty on success, else
 // "line N: what is wrong"; out is unchanged on failure. It also reads an older

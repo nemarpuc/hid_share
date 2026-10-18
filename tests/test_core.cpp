@@ -764,7 +764,6 @@ TEST_CASE("a device's file round-trips and only replaces what it names") {
     CHECK(device.width == 1600);
     CHECK(device.height == 0);
     CHECK(device.accel == AccelSetting::off);
-    CHECK(device.read_at == "2026-10-05");
     CHECK(device.adb_port == 7000);
     CHECK(device.adb_proxy);
 
@@ -805,27 +804,9 @@ TEST_CASE("a device's file round-trips and only replaces what it names") {
     CHECK(valid_name("Galaxy Tab S11"));
     CHECK(!valid_name("a=b"));
     CHECK(!valid_name("two\nlines"));
-    CHECK(clean_name("  Pixel 8\n[adb]\ntune = true ") == "Pixel 8[adb]tune  true");
     // `;` and `#` would start a comment when the file is read back.
     CHECK(!valid_name("Tab #2"));
     CHECK(!valid_name("a ;b"));
-    CHECK(clean_name("Tab #2 ; x") == "Tab 2  x");
-    {
-        // Whatever a device calls itself, its file reads back as written.
-        DeviceConfig named;
-        named.serial = "S1";
-        named.name = clean_name("Galaxy #1 ; [adb]\rtune=true");
-        DeviceConfig back;
-        REQUIRE(parse_device(format_device(named), back).empty());
-        CHECK(back.name == named.name);
-        CHECK(format_device(back) == format_device(named));
-    }
-    CHECK(valid_name(clean_name(std::string(200, 'x'))));
-    // The limit is in bytes; a character it would cut through is left out.
-    const std::string cut = clean_name(std::string(47, 'x') + "\xC3\xA9");
-    CHECK(cut == std::string(47, 'x'));
-    CHECK(clean_name(std::string(46, 'x') + "\xC3\xA9") == std::string(46, 'x') + "\xC3\xA9");
-    CHECK(valid_name(cut));
     {
         // A name that is another device's serial could never be reached.
         Config clash;
@@ -1332,8 +1313,8 @@ TEST_CASE("the gain follows the pointer speed unless one is typed") {
     DeviceConfig bare;
     CHECK(effective_gain(bare) == 0.0);
 
-    // A gain in a file that is only what the speed and density give (an old
-    // "fill" wrote it) is not kept as a value of its own.
+    // A gain in a file that is only what the speed and density give (an earlier
+    // version wrote it from adb) is not kept as a value of its own.
     DeviceConfig stale;
     REQUIRE(parse_device("[detected]\ndensity = 340\npointer_speed = 0\ngain = 2.169\n", stale)
                 .empty());
@@ -1449,13 +1430,12 @@ TEST_CASE("a board is written and read back, and its serial comes from its port"
     config.devices[1].name = "second";
     CHECK_FALSE(validate_config(config).empty());
 
-    // The serial link is the computer's, and has no default.
+    // The wait for a board is no longer a setting: an old line is read and dropped.
     Config globals;
-    CHECK(globals.mim.timeout_ms == 0);
-    globals.mim.timeout_ms = 500;
     Config read;
-    REQUIRE(parse_globals(format_globals(globals), read).empty());
-    CHECK(read.mim.timeout_ms == 500);
+    CHECK(parse_globals("[mim]\ntimeout_ms = 500\n", read).empty());
+    CHECK(format_globals(read).find("timeout_ms") == std::string::npos);
     CHECK_FALSE(parse_globals("[mim]\nbaud = 3000000\n", read).empty());
     CHECK_FALSE(parse_globals("[mim]\ntimeout_ms = 60001\n", read).empty());
+    CHECK(format_globals(globals).find("[mim]") == std::string::npos);
 }

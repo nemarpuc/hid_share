@@ -8,14 +8,29 @@
   kind; an Android phone over AOA (libaoahid) still works. A device's file says
   `link = aoa|mim`; a file without it is not opened and its status asks for the
   line (add `link = aoa` to files from earlier versions).
-- New `[mim] timeout_ms` and, per board, `[mim]` (`port`, `baud`) / `[usb]` sections.
-  They have no defaults; boards differ in speed, so `baud` is each board's own, and
-  adding a board from `find_boards` writes the fastest rate the search measured. New `find_boards` command; a board is searched for
-  only when asked, never while one is open. See `docs/CONFIG.md`.
+- Per board, new `[mim]` (`port`, `baud`) and `[usb]` sections. They have no defaults;
+  boards differ in speed, so `baud` is each board's own, and adding a board from the
+  search writes the fastest rate the search measured. The wait for a board's answer is
+  a constant (500 ms), not a setting; an old `[mim] timeout_ms` line is read and dropped.
+  See `docs/CONFIG.md`.
+- One search: the refresh icon (`hid_share rescan`) looks for phones and boards. It
+  asks every serial port whether a board answers, so only the search the user asks for
+  does it; ports in use are passed over. The separate Find buttons and `find_boards`
+  are gone.
+- A **Setup** tab, first for every device, lists what is left before it works, in
+  order, with the reason and the next action at each step (for a board: found, what
+  the other computer sees, taken by the other computer, its screen, where it sits;
+  for a phone the same without the second). The Computer page says how to start
+  while there is no device.
+- **Fill from ADB is gone** (the `fill` command, the button, `detected.read_at`, the
+  status keys `fill`, `reading` and `files_version`): reading a phone through adb did
+  not work reliably. Screen size and gain are measured with the calibration wizard or
+  typed. The ADB proxy stays; adb is run only to stop its server. A `read_at` line in
+  an old file is read and dropped.
 - The output side is split into a hub (queue, pacing, statistics) and one port
   per target; the AOA code is unchanged in behaviour.
-- The settings window groups devices by link and has a Board (MIM) tab and a
-  USB tab for boards.
+- The settings window groups devices by link and has a USB tab for boards (the four
+  values a board cannot be opened without, and the rest under Advanced).
 - The USB tab of a board can copy everything a plugged-in mouse or touchscreen
   announces (ids, strings, serial number, release, current, power attributes;
   Linux). New `[usb]` keys: `bcd_device`, `max_power_ma`, `self_powered`,

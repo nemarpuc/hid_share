@@ -66,9 +66,6 @@ class Daemon final : public CaptureHandler {
         // How it was opened (see rebuild_phones()).
         LinkOptions link_options;
         bool wants_proxy{};
-        // What the last "fill" said, and whether all went well.
-        std::string fill_note;
-        bool fill_ok{};
         Size natural{};
         int rotation{-1};
         // Android pixels per millimetre.
@@ -128,7 +125,6 @@ class Daemon final : public CaptureHandler {
     };
     struct StatusView {
         std::string head;
-        std::string fill_serial;
         std::vector<std::string> serials;
         std::vector<PhoneView> phones;
     };
@@ -163,11 +159,6 @@ class Daemon final : public CaptureHandler {
     [[nodiscard]] bool place_on_monitor(Phone& phone);
     [[nodiscard]] bool place_beside(Phone& phone, const Phone& parent);
     void set_motion(Phone& phone);
-    // "fill": starts reading a connected device through its proxy, off the
-    // capture thread, and writes what it said into its file when done.
-    [[nodiscard]] std::string start_fill(size_t index);
-    void finish_fill(const std::string& serial, uint64_t generation, bool read,
-                     const PhoneFacts& facts, const std::string& problem);
     void apply_barriers();
     void leave();
     [[nodiscard]] std::string enter_by_command(size_t phone);
@@ -230,17 +221,11 @@ class Daemon final : public CaptureHandler {
     std::string last_used_;
     // Devices that are connected but have no file yet.
     std::vector<TargetInfo> new_;
-    // Boards are searched for only when asked to; this is set by the command
-    // and taken by the next scan.
+    // Boards are searched for only when the user asks (rescan); this is set by
+    // the command and taken by the next scan.
     std::atomic<bool> probe_boards_{};
     // What the last scan could not do. Capture thread only.
     std::string scan_error_;
-    // The reading "fill" runs: its thread, whose phone, and whether it is
-    // to end early (the daemon is quitting).
-    std::thread fill_thread_;
-    std::atomic<bool> fill_running_{};
-    std::atomic<bool> fill_cancel_{};
-    std::string fill_serial_;
     // The media hotkey being held: its key, the usage it sent and to which phone.
     uint16_t held_media_key_{};
     uint16_t held_media_usage_{};
@@ -268,8 +253,6 @@ class Daemon final : public CaptureHandler {
     bool wake_{};
     // Counts the rebuilds of phones_; capture thread only.
     uint64_t generation_{};
-    // Counts the times the daemon wrote a device's file on its own ("fill").
-    std::atomic<uint64_t> files_version_{};
     // Set once the capture backend runs; commands arriving earlier are
     // answered without touching it.
     std::atomic<bool> ready_{};

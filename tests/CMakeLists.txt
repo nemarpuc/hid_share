@@ -11,7 +11,7 @@ target_compile_definitions(hid_share_keys_tests PRIVATE
   HID_SHARE_DOCS_DIR="${PROJECT_SOURCE_DIR}/docs")
 add_test(NAME hid_share.keys COMMAND hid_share_keys_tests)
 
-# The adb output parsers and the state file. This one links libaoahid, whose
+# The adb program, and the settings folder and state file. This one links libaoahid, whose
 # DLL is not next to the test on Windows, so it is built elsewhere only.
 if(NOT WIN32)
   add_executable(hid_share_output_tests test_output.cpp)

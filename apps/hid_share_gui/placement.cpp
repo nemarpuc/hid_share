@@ -97,6 +97,11 @@ bool shown_above(const ConfigKey& key) {
 
 } // namespace
 
+void draw_placement_basics(App& app, DeviceConfig& device) {
+    draw_beside(app, device);
+    draw_side(app, device);
+}
+
 void draw_placement(App& app, DeviceConfig& device) {
     draw_layout(app);
     ImGui::Spacing();

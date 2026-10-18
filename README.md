@@ -20,8 +20,8 @@ There are two ways to reach it, chosen per device:
   keyboard through
   [Android Open Accessory 2.0](https://source.android.com/docs/core/interaction/accessories/aoa2)
   HID, using [libaoahid](https://github.com/nemarpuc/libaoahid). With USB
-  debugging on, it also keeps `adb` working, and can fill in the device's size and
-  gain from it.
+  debugging on, it also keeps `adb` working: the phone's ADB interface can be served on
+  a local port by a proxy.
 
 Both are in the same window and the same config; a device's file says which it
 uses (`link = mim` or `link = aoa`), and nothing is guessed when it does not.
@@ -71,21 +71,26 @@ lists the ones that have a file, and the phones that are plugged in.
 
 **With a board (MIM).** Flash the board and wire its serial port as
 [libmimhid's quick start](https://github.com/nemarpuc/libmimhid/blob/main/docs/QUICKSTART.md)
-says, and give your user access to the serial port. Then:
+says (libmimhid 1.0.1 firmware), and give your user access to the serial port.
+Then, in the settings window (`hid_share_gui`):
 
-1. In the settings window (`hid_share_gui`), Computer, **Board (MIM)** tab: enter
-   the link timeout. It has no default.
-2. Press **Find** at the top of the boards list (or `hid_share find_boards`). It
-   sends a message to every serial port that could be a board, which is why it is
-   done only when asked; ports in use are passed over. It also measures the
-   fastest serial speed the board's adapter carries. The board appears as
-   `+ ...`; pressing it adds it with that speed and tries to open it.
-3. On its page, **USB** tab, enter the vendor id, product id and the two strings
-   the board announces to the other machine, or copy them from a plugged-in mouse
-   or touchscreen with the button there. None has a default and no maker's name
-   is assumed; the board is not opened until they are set. Then **Connect**.
-4. Set the other machine's size and gain (Screen tab), where it sits (Placement
-   tab), and push the cursor through the edge.
+1. Start the daemon (the button at the bottom left) and press the **refresh icon**
+   above the device list (or `hid_share rescan`). It looks for phones and sends a
+   message to every serial port that could be a board, which is why it is done only
+   when you ask; ports in use are passed over. It also measures the fastest
+   serial speed the board's adapter carries. The board appears as `+ ...`.
+2. Press it. The board is added with that speed, and its **Setup** tab opens. The
+   Setup tab lists what is left, in order, with the reason and the next action at
+   each step:
+   - what the other computer sees: the name and ids the board shows as a USB
+     device (copy them from a mouse or touchscreen plugged in here, with the button;
+     none has a default and no maker's name is assumed);
+   - the other computer has taken it: plug the board's USB cable into that
+     computer and press **Connect**;
+   - the other screen: its size and how far a count moves the cursor, measured by
+     the wizard on the tab;
+   - where it sits next to your monitors.
+3. Push the cursor through the edge.
 
 A board that has a file is opened on the port its file names, without searching.
 Adding or removing the mouse, keyboard, media keys or touchscreen of an open
@@ -94,10 +99,10 @@ board makes it detach from the other machine and attach again once.
 **With a phone (AOA).** Install [libaoahid](https://github.com/nemarpuc/libaoahid/releases)
 4.0 or newer and its udev rule, so your user can open the phone
 ([libaoahid PORTING.md](https://github.com/nemarpuc/libaoahid/blob/main/docs/PORTING.md#linux)).
-Plug the phone in. It appears as newly detected; run
-`hid_share connect <serial>` (or the Connect button) to give it a file and open it.
-Then turn its ADB proxy on and run `hid_share fill <serial>` to read its size and
-pointer speed, or enter them by hand ([docs/CONFIG.md](docs/CONFIG.md)).
+Plug the phone in and press the refresh icon. It appears as `+ ...`; press it (or run
+`hid_share connect <serial>`) to give it a file and open it. Its **Setup** tab then
+walks through the same steps: the phone takes it, the screen (measured with the
+wizard, or typed; [docs/CONFIG.md](docs/CONFIG.md)), and where it sits.
 
 A device's file says how it is reached (`link = aoa` or `link = mim`). A file
 from before this setting has none: add `link = aoa` to it by hand.
@@ -108,17 +113,18 @@ On GNOME and KDE the desktop asks once for permission to capture input.
 like a device manager: the computer is listed on the left, and once the daemon
 runs (the button at the bottom left starts it) the devices too, boards (MIM) and
 phones (AOA) under their own headings. The refresh icon at the top right of the
-device list rescans for devices, **Find** looks for boards, and the buttons
+device list searches for phones and boards, and the buttons
 under the list connect or disconnect the one that is chosen (for the computer:
 disconnect every device, stop the daemon). Apply and Discard changes are at the
 bottom right. On the right each setting
 is a row, its name at the left and its control (a switch, a drop-down, a field)
-at the right edge. A device has the tabs Device (name, in use, and for a phone its ADB proxy, for a board its
-serial port), Keys (its shortcuts), HID
+at the right edge. A device has the tabs Setup (what is left to do before it works, in order),
+Device (name, in use, and for a phone its ADB proxy, for a board its
+serial port and speed), Keys (its shortcuts), HID
 (which of the mouse, keyboard, media keys and touchscreen it gets), USB (a board only: what it announces),
 Placement (drag it around your monitors, or say which side of what it
 sits on), Screen, Motion, Tools, Status (every key the daemon reports) and Reports; the
-computer has General, HID, Motion (with the polling rate), Board (MIM), ADB (Android), Tools and Status.
+computer has General (with a short "getting started" while there is no device), HID, Motion (with the polling rate), ADB (Android), Tools and Status.
 It only edits the config and talks to the daemon; closing it changes nothing.
 Nothing starts the daemon but you: run it yourself, or press its button in the
 window.
@@ -160,13 +166,9 @@ run `adb connect 127.0.0.1:6555` yourself and the phone shows up in
 the daemon uses adb on its own: no `adb connect`, no reading of the phone, no
 change of its settings.
 
-**Fill from ADB** (the Screen card of a device's page, or `hid_share fill
-DEVICE`) is the one place adb is run: with the proxy on, it connects, reads
-the resolution, rotation, physical size, pointer speed and whether pointer
-acceleration is on, and writes them (and the gain they give) into the
-device's file. It does not close or reopen anything. Every value can also be
-typed in by hand; a value that is not set is said to be missing, never
-guessed. The only way the daemon touches adb's server is to stop it
+The size, rotation, diagonal and pointer settings of a screen are typed or
+measured with the wizard (the Setup and Screen tabs); a value that is not set is
+said to be missing, never guessed. The only way the daemon touches adb's server is to stop it
 (`kill_server`, in `[adb]`): before each scan that was asked for (also the one at start), when it holds
 the ADB interface that a proxy is to take, and once more on exit if a proxy was
 served.
@@ -189,9 +191,6 @@ report_rate_hz = max   ; or every | 10..8000
 
 [adb]
 kill_server = true     ; stop adb's server before a scan and when it holds a phone a proxy is to take
-
-[mim]
-timeout_ms = 2000
 ```
 
 `settings/device/<serial>.ini` for a phone:
@@ -204,7 +203,7 @@ link = aoa
 [placement]
 monitor = HDMI-A-2     ; which monitor the device sits next to (or beside = another serial)
 side = right           ; left | right | top | bottom
-rotation = 0           ; set by hand, or filled from adb
+rotation = 0           ; set by hand
 
 [detected]
 width = 1600
@@ -264,9 +263,10 @@ shares a screen edge with your desktop's own edge features:
   through the serial adapter). **hid_share has not been run with a real board or
   a real target machine.** Not tested: how any game or program treats the input.
 - **Real device, Arch Linux:** Galaxy Tab S11, Android 16. Corner reference,
-  tracking, return, re-entry at a new height, sensitivity, the ADB proxy and the
-  setup from adb were compared against the position Android itself reports and
-  matched to within a pixel.
+  tracking, return, re-entry at a new height and sensitivity were compared against the
+  position Android itself reports and matched to within a pixel, with an earlier version
+  that also read the screen through adb (that reading is gone: it did not work reliably
+  on a second phone). The ADB proxy has been used with it.
 - **`x11` backend:** crossing, movement, keys, buttons, return and hotkeys on a
   virtual X server.
 - **`portal` backend:** KDE Plasma 6.7 (Wayland), with a physical mouse:
