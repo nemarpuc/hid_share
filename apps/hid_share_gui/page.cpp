@@ -76,7 +76,7 @@ constexpr DeviceTabEntry board_tabs[] = {
             return;
         list += (list.empty() ? "" : ", ") + std::string(name);
     };
-    need(app.config.mim.baud != 0, "serial speed (Computer, Board tab)");
+    need(device.mim.baud != 0, "serial speed");
     need(app.config.mim.timeout_ms != 0, "link timeout (Computer, Board tab)");
     need(!device.mim.port.empty(), "serial port");
     need(device.mim.vendor_id != 0, "vendor id");
@@ -206,6 +206,7 @@ void draw_device_tab(App& app, DeviceConfig& device) {
     draw_row(app, KeyScope::device, "device", "enabled", &device, "In use");
     if (is_board(device)) {
         draw_row(app, KeyScope::device, "mim", "port", &device, "Serial port");
+        draw_row(app, KeyScope::device, "mim", "baud", &device, "Serial speed");
         const std::string missing = board_missing(app, device);
         if (!missing.empty())
             look::dim(("Not set: " + missing + ". It is not opened until they are.").c_str());
@@ -414,9 +415,8 @@ void draw_computer_page(App& app) {
         draw_group(app, "Motion", nullptr);
         break;
     case ComputerTab::board:
-        look::dim("How every board is reached over its serial port. Neither value has a default: "
-                  "a board is not opened while one is empty.");
-        draw_row(app, KeyScope::computer, "mim", "baud", nullptr, "Serial speed");
+        look::dim("How long the serial link waits for a board. It has no default: a board is not "
+                  "opened while it is empty. The serial speed is each board's own (its Device tab).");
         draw_row(app, KeyScope::computer, "mim", "timeout_ms", nullptr, "Link timeout");
         ImGui::Spacing();
         look::heading("Finding boards");

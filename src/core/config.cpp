@@ -362,12 +362,6 @@ bool set_adb(Config& c, const std::string_view key, const std::string_view value
 // The board's serial link, for every board. Empty is a value not given.
 bool set_mim_link(Config& c, const std::string_view key, const std::string_view value) {
     int number = 0;
-    if (key == "baud") {
-        if (!value.empty() && !to_int(value, 1, 4000000, number))
-            return false;
-        c.mim.baud = static_cast<uint32_t>(value.empty() ? 0 : number);
-        return true;
-    }
     if (key == "timeout_ms") {
         if (!value.empty() && !to_int(value, 1, 60000, number))
             return false;
@@ -452,6 +446,13 @@ const char* link_name(const LinkKind link) noexcept {
 bool set_mim_device(DeviceConfig& d, const std::string_view key, const std::string_view value) {
     if (key == "port")
         return to_port_path(value, d.mim.port);
+    if (key == "baud") {
+        int number = 0;
+        if (!value.empty() && !to_int(value, 1, 4000000, number))
+            return false;
+        d.mim.baud = static_cast<uint32_t>(value.empty() ? 0 : number);
+        return true;
+    }
     return false;
 }
 
@@ -1007,7 +1008,6 @@ std::string format_globals(const Config& c) {
     out.put("first_port", std::to_string(c.adb_first_port));
 
     out.section("mim");
-    out.put("baud", c.mim.baud == 0 ? "" : std::to_string(c.mim.baud));
     out.put("timeout_ms", c.mim.timeout_ms == 0 ? "" : std::to_string(c.mim.timeout_ms));
     return out.text;
 }
@@ -1252,6 +1252,7 @@ std::string format_device(const DeviceConfig& d) {
     if (d.link == LinkKind::mim) {
         out.section("mim");
         out.put("port", d.mim.port);
+        out.put("baud", d.mim.baud == 0 ? "" : std::to_string(d.mim.baud));
         out.section("usb");
         out.put("vendor_id", usb_id_text(d.mim.vendor_id));
         out.put("product_id", usb_id_text(d.mim.product_id));

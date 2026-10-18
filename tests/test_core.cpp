@@ -1403,6 +1403,7 @@ TEST_CASE("a board is written and read back, and its serial comes from its port"
     board.serial = "mim-ttyUSB0";
     board.link = LinkKind::mim;
     board.mim.port = "/dev/ttyUSB0";
+    board.mim.baud = 3000000;
     board.mim.vendor_id = 0x1234;
     board.mim.product_id = 0x5678;
     board.mim.manufacturer = "maker";
@@ -1412,6 +1413,7 @@ TEST_CASE("a board is written and read back, and its serial comes from its port"
     REQUIRE(parse_device(format_device(board), back).empty());
     CHECK(back.link == LinkKind::mim);
     CHECK(back.mim.port == board.mim.port);
+    CHECK(back.mim.baud == 3000000);
     CHECK(back.mim.vendor_id == 0x1234);
     CHECK(back.mim.product_id == 0x5678);
     CHECK(back.mim.manufacturer == "maker");
@@ -1449,14 +1451,11 @@ TEST_CASE("a board is written and read back, and its serial comes from its port"
 
     // The serial link is the computer's, and has no default.
     Config globals;
-    CHECK(globals.mim.baud == 0);
     CHECK(globals.mim.timeout_ms == 0);
-    globals.mim.baud = 921600;
     globals.mim.timeout_ms = 500;
     Config read;
     REQUIRE(parse_globals(format_globals(globals), read).empty());
-    CHECK(read.mim.baud == 921600);
     CHECK(read.mim.timeout_ms == 500);
-    CHECK_FALSE(parse_globals("[mim]\nbaud = 0\n", read).empty());
+    CHECK_FALSE(parse_globals("[mim]\nbaud = 3000000\n", read).empty());
     CHECK_FALSE(parse_globals("[mim]\ntimeout_ms = 60001\n", read).empty());
 }

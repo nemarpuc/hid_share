@@ -174,7 +174,6 @@ is missing, and its status names it.
 
 | Key | Default | |
 | --- | --- | --- |
-| `baud` | empty | the serial speed, 1 to 4000000; it must be the one the board's firmware is built for |
 | `timeout_ms` | empty | how long the serial link waits for a board's answer, 1 to 60000 |
 
 The ports of the devices that have a file are opened as they are, without
@@ -319,6 +318,7 @@ it.
 
 | Key | Default | |
 | --- | --- | --- |
+| `baud` | empty | the serial speed of this board, 1 to 4000000; it must be the one its firmware is built for (boards differ, so it is the board's own, not the computer's) |
 | `port` | empty | the board's serial port: `/dev/ttyUSB0`, a `/dev/serial/by-id/` path (it stays the same when the board is plugged in again) or `COM3`. The device's `serial` is `mim-` and the end of this, with anything a serial may not hold turned into `_`; a file whose serial is another is refused. It is set when the device is added and is not typed in the settings window |
 | `vendor_id`, `product_id` | empty | the ids the board announces to its target, 0x0001 to 0xFFFF |
 | `manufacturer`, `product` | empty | the strings it announces, printable ASCII, at most 31 characters |

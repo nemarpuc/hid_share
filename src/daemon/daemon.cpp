@@ -211,7 +211,7 @@ LinkOptions link_options_for(const Config& config, const DeviceConfig& device) {
     options.touch_size = {device.width, device.height};
     // Only a board has these; a phone's must not change when they do.
     if (device.link == LinkKind::mim) {
-        options.mim.baud = config.mim.baud;
+        options.mim.baud = device.mim.baud;
         options.mim.timeout_ms = config.mim.timeout_ms;
         options.mim.vendor_id = device.mim.vendor_id;
         options.mim.product_id = device.mim.product_id;

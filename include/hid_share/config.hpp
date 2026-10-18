@@ -112,6 +112,9 @@ struct MimDevice {
     // The serial port, as the operating system names it. The device's serial
     // is made from it (mim_serial_of).
     std::string port;
+    // The serial speed; it must be the one this board's firmware is built for.
+    // 0 when not set.
+    uint32_t baud{};
     // USB ids as typed; 0 when not set.
     uint16_t vendor_id{};
     uint16_t product_id{};
@@ -199,8 +202,6 @@ struct DeviceConfig {
 
 // The serial link to the boards, for every board; 0 when not set.
 struct MimLink {
-    // Must match the board's firmware.
-    uint32_t baud{};
     uint32_t timeout_ms{};
 };
 

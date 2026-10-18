@@ -8,8 +8,8 @@
   kind; an Android phone over AOA (libaoahid) still works. A device's file says
   `link = aoa|mim`; a file without it is not opened and its status asks for the
   line (add `link = aoa` to files from earlier versions).
-- New `[mim]` (`baud`, `timeout_ms`) and, per board, `[mim]` / `[usb]` sections.
-  They have no defaults. New `find_boards` command; a board is searched for
+- New `[mim] timeout_ms` and, per board, `[mim]` (`port`, `baud`) / `[usb]` sections.
+  They have no defaults; boards differ in speed, so `baud` is each board's own. New `find_boards` command; a board is searched for
   only when asked, never while one is open. See `docs/CONFIG.md`.
 - The output side is split into a hub (queue, pacing, statistics) and one port
   per target; the AOA code is unchanged in behaviour.

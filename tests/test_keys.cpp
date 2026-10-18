@@ -156,6 +156,7 @@ DeviceConfig full_device() {
     d.adb_port = 6555;
     d.link = LinkKind::mim;
     d.mim.port = "/dev/ttyUSB0";
+    d.mim.baud = 3000000;
     d.mim.vendor_id = 0x1234;
     d.mim.product_id = 0x5678;
     d.mim.manufacturer = "maker";
@@ -224,7 +225,7 @@ TEST_CASE("every key in the table is accepted by the parser and read back") {
         {"usb.product_id", "1234"},
         {"usb.bcd_device", "0x0109"},
         {"usb.max_power_ma", "480"},
-        {"mim.baud", "921600"},
+        {"mim.baud", "3000000"},
         {"mim.port", "/dev/ttyUSB1"},
         {"mim.timeout_ms", "500"},
     };

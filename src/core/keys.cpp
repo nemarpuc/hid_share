@@ -93,9 +93,6 @@ constexpr ConfigKey table[] = {
      "Where the proxy ports start (not 5555 to 5585)."},
 
     // [mim]
-    {S::computer, "mim", "baud", "Board", K::integer, "1..4000000", "baud", "",
-     "The serial speed of every board. It must be the one the board's firmware is built for; "
-     "there is no default."},
     {S::computer, "mim", "timeout_ms", "Board", K::integer, "1..60000", "ms", "",
      "How long the serial link waits for a board's answer; there is no default."},
 
@@ -180,6 +177,9 @@ constexpr ConfigKey table[] = {
      "The board's serial port: /dev/ttyUSB0, or a /dev/serial/by-id/ path that stays the same "
      "when the board is plugged in again, or COM3. The device's serial is made from its last "
      "part, so it is set when the device is added.", true},
+    {S::device, "mim", "baud", "Board", K::integer, "1..4000000", "baud", "",
+     "The serial speed of this board. It must be the one the board's firmware is built for; "
+     "there is no default."},
     {S::device, "usb", "vendor_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",
      "The vendor id the board announces to its target; there is no default."},
     {S::device, "usb", "product_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",
