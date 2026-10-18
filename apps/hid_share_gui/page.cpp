@@ -7,6 +7,7 @@
 #include "app.hpp"
 #include "field.hpp"
 #include "look.hpp"
+#include "mice.hpp"
 #include "placement.hpp"
 #include "status_view.hpp"
 
@@ -252,6 +253,46 @@ void draw_hid_tab(App& app, DeviceConfig& device) {
     }
 }
 
+// Gives the board the identity of a mouse that is plugged in here: its ids and the two
+// strings it announces. The serial number is not copied.
+void draw_copy_mouse(App& app, DeviceConfig& device) {
+    if (ImGui::Button("Copy from a plugged-in mouse...")) {
+        app.mice = list_mice();
+        ImGui::OpenPopup("copy_mouse");
+    }
+    if (!ImGui::BeginPopup("copy_mouse"))
+        return;
+    if (app.mice.empty())
+        ImGui::TextUnformatted("No USB mouse found (this works on Linux only).");
+    for (const Mouse& mouse : app.mice) {
+        char label[160];
+        std::snprintf(label, sizeof label, "%s  (%04x:%04x)", mouse.name.c_str(), mouse.vendor_id,
+                      mouse.product_id);
+        if (!ImGui::Selectable(label))
+            continue;
+        char id[16];
+        std::snprintf(id, sizeof id, "0x%04x", mouse.vendor_id);
+        const bool vendor = set_field(app, *find_config_key(KeyScope::device, "usb", "vendor_id"),
+                                      &device, id);
+        std::snprintf(id, sizeof id, "0x%04x", mouse.product_id);
+        const bool product = set_field(
+            app, *find_config_key(KeyScope::device, "usb", "product_id"), &device, id);
+        // A string the mouse does not have is left for the user to type; one that
+        // cannot be taken keeps the parser's reason on its row.
+        const bool maker =
+            !mouse.manufacturer.empty() &&
+            set_field(app, *find_config_key(KeyScope::device, "usb", "manufacturer"), &device,
+                      mouse.manufacturer);
+        const bool name = !mouse.product.empty() &&
+                          set_field(app, *find_config_key(KeyScope::device, "usb", "product"),
+                                    &device, mouse.product);
+        app.failed = !(vendor && product && maker && name);
+        app.message = app.failed ? "Copied what could be; check the rows that are still empty."
+                                 : "Copied. Apply, then disconnect and connect the board.";
+    }
+    ImGui::EndPopup();
+}
+
 void draw_usb_tab(App& app, DeviceConfig& device) {
     look::dim("What the board announces to its target as the USB device it is. None of these has "
               "a default, and no maker's name is assumed: the board is not opened while the "
@@ -265,6 +306,7 @@ void draw_usb_tab(App& app, DeviceConfig& device) {
              "Use the chip's id as the serial number");
     look::dim("A change here takes the board off its target and puts it back: apply it, then "
               "disconnect and connect the board.");
+    draw_copy_mouse(app, device);
 }
 
 // The place of the remembered tab in this device's tabs: the first when it has

@@ -3,6 +3,7 @@
 
 #include "hid_share/config.hpp"
 #include "hid_share/geometry.hpp"
+#include "mice.hpp"
 
 #include <imgui.h>
 
@@ -51,6 +52,8 @@ struct App {
     std::map<std::string, std::string> status;
     std::vector<hids::Monitor> monitors;
     std::vector<NewDevice> fresh;
+    // The mice offered for a board's identity, read when the list is opened.
+    std::vector<Mouse> mice;
     bool daemon_running{};
     double next_poll{};
 

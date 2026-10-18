@@ -65,6 +65,7 @@ add_executable(hid_share_gui WIN32
   actions.cpp
   field.cpp
   layout_view.cpp
+  mice.cpp
   page.cpp
   placement.cpp
   status_view.cpp)
