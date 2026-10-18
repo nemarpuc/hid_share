@@ -8,8 +8,8 @@ CMakeUserPresets.json
 compile_commands.json
 
 # Release archives made locally
-aoahid-share-*.tar.gz
-aoahid-share-*.zip
+hid-share-*.tar.gz
+hid-share-*.zip
 
 # IDE / editor / OS
 .vscode/
