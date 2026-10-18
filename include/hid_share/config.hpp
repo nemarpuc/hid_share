@@ -291,6 +291,8 @@ struct Config {
 // device's proxy switch and port, are taken from this computer's. They decide
 // which program the daemon runs, whether it stops the adb server and which
 // interface it serves, none of which a file from elsewhere gets to choose.
+// The same goes for the serial port of a board: a board this computer does not
+// have is imported switched off.
 // True if that changed anything.
 bool keep_local_adb(Config& imported, const Config& local);
 

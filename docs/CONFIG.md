@@ -390,7 +390,7 @@ was found), `config_error`, `capture_error`,
 | `probe SERIAL\|NAME move DX DY` | move the cursor by raw counts, up to 30000 |
 | `reports SERIAL\|NAME` | `ok`, then what the last reports to that device carried, one line each: `N MS REPORT TEXT` (the line's number, the clock in milliseconds, the report it went out in, and the call: mouse move/scroll/button, key, media, touch contact down/move/lift with its raw position). Recorded only for a few seconds after each ask |
 | `export [--device SERIAL\|NAME] FILE` | export the whole configuration, or one device, as one text file |
-| `import FILE` | check FILE, take it as the configuration or as one device, and reload; this computer's `[adb]` section is kept |
+| `import FILE` | check FILE, take it as the configuration or as one device, and reload; this computer's `[adb]` section and board ports are kept (a board it does not have comes in switched off) |
 | `buttons` | count the buttons of connected mice |
 | `quit` | stop the daemon |
 | `paths` | show the settings, device, state and control paths |

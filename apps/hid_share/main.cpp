@@ -129,7 +129,7 @@ int main(const int argc, char** argv) {
         // never chooses it or what it is used for: this computer's adb
         // settings stay.
         if (hids::keep_local_adb(imported, current))
-            std::fputs("hid_share: adb settings are not imported; this computer's are kept\n",
+            std::fputs("hid_share: adb settings and board ports are not imported; this computer's are kept\n",
                        stderr);
         if (!hids::save_store(imported)) {
             std::fputs("hid_share: the config could not be written\n", stderr);

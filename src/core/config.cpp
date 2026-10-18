@@ -1400,6 +1400,17 @@ bool keep_local_adb(Config& imported, const Config& local) {
         changed = changed || device.adb_proxy != proxy || device.adb_port != port;
         device.adb_proxy = proxy;
         device.adb_port = port;
+        // Which serial port a board is on is decided here too: one this
+        // computer does not know is left off until it is switched on by hand.
+        if (device.link != LinkKind::mim)
+            continue;
+        if (own != local.devices.end() && own->link == LinkKind::mim) {
+            changed = changed || device.mim.port != own->mim.port;
+            device.mim.port = own->mim.port;
+        } else if (device.enabled) {
+            device.enabled = false;
+            changed = true;
+        }
     }
     return changed;
 }

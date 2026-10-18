@@ -423,6 +423,16 @@ TEST_CASE("an imported config keeps this computer's adb section") {
     imported.devices[0].adb_proxy = true;
     CHECK(keep_local_adb(imported, local));
     CHECK(!imported.devices[0].adb_proxy);
+
+    // A board's serial port is this computer's too; an unknown board comes in off.
+    Config boards;
+    REQUIRE(parse_config("--- device ---\n[device]\nserial = mim-ttyACM0\nlink = mim\n"
+                         "[mim]\nport = /dev/ttyACM0\n",
+                         boards)
+                .empty());
+    CHECK(boards.devices[0].enabled);
+    CHECK(keep_local_adb(boards, Config{}));
+    CHECK(!boards.devices[0].enabled);
 }
 
 TEST_CASE("a value that was never given is written as nothing, and reads back so") {
