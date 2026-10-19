@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "hid_share/clone.hpp"
 #include "hid_share/geometry.hpp"
 #include "hid_share/keymap.hpp"
 
@@ -8,6 +9,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -108,6 +110,58 @@ enum class LinkKind { unset, aoa, mim };
 
 // What a board announces to its target, and where it is. Used with
 // `link = mim` only.
+// One Node's USB interface on a board; a member left out takes its ordinary
+// value (docs/CONFIG.md, "[usb.mouse]").
+struct NodeUsb {
+    std::optional<uint32_t> interface_number; // 0..255
+    std::string interface_name;               // at most 31 printable ASCII; empty: none
+    std::optional<uint32_t> poll_interval_ms; // 1..255
+    std::optional<uint32_t> ep_in_size;       // 1 to 64
+    std::optional<uint32_t> ep_out_size;      // 0 (none) to 64
+    std::optional<uint32_t> bcd_hid;          // 0x0001..0xFFFF
+    std::optional<uint32_t> country_code;     // 0..255
+    std::optional<uint32_t> report_id;        // 1..255; left out: no Report ID
+
+    [[nodiscard]] bool operator==(const NodeUsb&) const = default;
+};
+// Mouse, keyboard, media keys, touchscreen: the order of the output's NodeKind.
+inline constexpr size_t usb_nodes = 4;
+
+// The interface number of each wanted Node (bit n of `wanted` is Node n): a
+// pinned number is kept, the others take the lowest numbers no pinned Node
+// uses, in Node order. A Node that is not wanted gets 0.
+[[nodiscard]] std::array<uint32_t, usb_nodes>
+interface_numbers(const std::array<NodeUsb, usb_nodes>& nodes, uint8_t wanted) noexcept;
+
+// The touchscreen Node's HID descriptor values ([touch_hid], per device, for both
+// links). A member left out takes the ordinary value of the link (docs/CONFIG.md);
+// x and y always follow the real size.
+struct TouchHid {
+    std::optional<uint32_t> maximum_contacts, contacts_per_report; // 1..16
+    std::optional<uint32_t> contact_id_max, contact_id_bits;       // 0..255, 1..8
+    std::optional<uint32_t> contact_count_max, contact_count_bits; // 1..16, 1..8
+    std::optional<uint32_t> coordinate_bits;                       // 8..16
+    // An optional field is declared when its *_max is given; *_bits left out is
+    // the smallest width that holds the maximum.
+    std::optional<uint32_t> pressure_max, pressure_bits;
+    std::optional<uint32_t> width_max, width_bits;
+    std::optional<uint32_t> height_max, height_bits;
+    std::optional<uint32_t> azimuth_max, azimuth_bits;
+    std::optional<uint32_t> scan_time_max, scan_time_bits, scan_time_unit_100us;
+
+    [[nodiscard]] bool operator==(const TouchHid&) const = default;
+};
+
+// Empty when the interface numbers of the Nodes that are wanted fit the board;
+// else a sentence with the board's limits.
+[[nodiscard]] std::string interface_limit_error(std::span<const uint32_t> numbers,
+                                                unsigned max_nodes, unsigned max_interfaces);
+
+// Empty when every wanted Node that shares an interface with another has a Report
+// ID, and no two of them have the same; else a sentence that names the Nodes.
+[[nodiscard]] std::string shared_interface_error(const std::array<NodeUsb, usb_nodes>& nodes,
+                                                 uint8_t wanted);
+
 struct MimDevice {
     // The serial port, as the operating system names it. The device's serial
     // is made from it (mim_serial_of).
@@ -127,10 +181,14 @@ struct MimDevice {
     // 0 when not set: the board announces 0x0100 and 100 mA.
     uint16_t bcd_device{};
     uint16_t max_power_ma{};
+    // The LANGID of its strings; 0 when not set: 0x0409.
+    uint16_t language_id{};
     bool self_powered{};
     bool remote_wakeup{};
     // The configuration string; empty announces none.
     std::string configuration;
+    // Each Node's interface.
+    std::array<NodeUsb, usb_nodes> node;
 };
 
 // A device's own shortcuts ([keys] in its file); empty for none.
@@ -166,17 +224,25 @@ struct DeviceConfig {
     std::string monitor;
     std::string beside;
     Side side{Side::right};
+    // Along the edge it sits on, in that edge's pixels; or as a ratio of the edge
+    // (written 50%), which takes the place of the pixels and fits any size.
     int segment_start{centred_start};
     int segment_length{-1};
+    std::optional<double> start_ratio;
+    std::optional<double> length_ratio;
     double corner_margin{0.05};
-    double monitor_diagonal_inch{};
+    // Touch mode only: how far the display as shown is turned from the
+    // touchscreen's own axes (0, 90, 180, 270); -1 when not set.
     int rotation{-1};
-    int mount_rotation{};
 
-    // What the device's screen is, typed or measured.
+    // How far the cursor travels across and down the screen: counts when it is
+    // measured with the wizard, pixels when typed with a gain.
     int width{};
     int height{};
-    double diagonal_inch{};
+    // The screen's real size in pixels as it is shown, typed. When it is given
+    // it is the screen the daemon works in, and the touchscreen is built from it.
+    int real_width{};
+    int real_height{};
     int pointer_speed{};
     // The density Android lays out with (`wm density`), in dpi; 0 when not
     // set. With the pointer speed it gives the gain at low speed.
@@ -191,6 +257,9 @@ struct DeviceConfig {
     std::optional<bool> keyboard;
     std::optional<bool> media;
     TouchPatch touch;
+    TouchHid touch_hid;
+    // A plugged-in device the board presents instead of its own Nodes (link = mim).
+    std::optional<CloneSnapshot> clone;
     // 0: the next free port from [adb] first_port, in the devices' order.
     uint16_t adb_port{};
     // Serve its ADB interface on adb_port (see docs/CONFIG.md). Off until it
@@ -200,6 +269,9 @@ struct DeviceConfig {
 
 struct Config {
     std::string backend{"auto"};
+    // Shows the Beta tab of the settings window (touch mode lives there). It
+    // hides nothing in the files and changes no behaviour.
+    bool beta{};
 
     unsigned mouse_buttons{5};
     // HID button for PC button 1, 2, ...; empty keeps them in order.
@@ -259,10 +331,26 @@ struct Config {
 // Empty when all is well.
 [[nodiscard]] std::string validate_config(const Config& config);
 
+// Where a device's gain comes from, in the order it is tried.
+enum class GainSource { none, typed, measured, android };
+
 // Pixels one count moves the device's cursor at low speed: the typed gain,
-// else the one the pointer speed and the density give; 0 when neither is
-// known.
+// else the real size over the travel measured in counts (both axes together,
+// docs/MATH.md "Gain"), else the one the pointer speed and the density give;
+// 0 when none is known.
 [[nodiscard]] double effective_gain(const DeviceConfig& device) noexcept;
+[[nodiscard]] GainSource gain_source(const DeviceConfig& device) noexcept;
+
+// Pixels one count moves the cursor, from the real size and the travel
+// measured in counts: the pixels from one corner pixel to the opposite one over
+// the counts that took the cursor there, both axes together. 0 when either
+// is missing.
+[[nodiscard]] double measured_gain(const DeviceConfig& device) noexcept;
+// Whether the real size is given (both sides).
+[[nodiscard]] bool has_real_size(const DeviceConfig& device) noexcept;
+// The screen the daemon works in: the real size when given, else the travel.
+[[nodiscard]] int view_width(const DeviceConfig& device) noexcept;
+[[nodiscard]] int view_height(const DeviceConfig& device) noexcept;
 
 // Whether a device has movement settings of its own, and a patch that holds
 // every one of these values (what a device that takes its own starts from).
@@ -278,9 +366,38 @@ struct Config {
 [[nodiscard]] bool keyboard_of(const Config& config, const DeviceConfig& device) noexcept;
 [[nodiscard]] bool media_of(const Config& config, const DeviceConfig& device) noexcept;
 [[nodiscard]] Touch touch_of(const Config& config, const DeviceConfig& device) noexcept;
+
+// What a board announces when nothing was typed (docs/CONFIG.md, "[usb]"). The
+// ids are the pid.codes test id, which is for in-house testing only; no other
+// maker's id or name is used here.
+inline constexpr uint16_t default_usb_vendor_id = 0x1209;
+inline constexpr uint16_t default_usb_product_id = 0x0001;
+inline constexpr std::string_view default_usb_manufacturer = "Generic";
+inline constexpr std::string_view default_usb_product = "USB Input Device";
+inline constexpr uint16_t default_usb_language_id = 0x0409;
+// The board's values with each one that was left out filled in. The two ids are
+// one unit: both left out give the test id, one given alone is kept as it is
+// and the other stays 0, so the board is not opened and says which is missing.
+[[nodiscard]] MimDevice mim_of(const DeviceConfig& device);
+// Whether the ids are the test id.
+[[nodiscard]] bool uses_test_id(const MimDevice& mim) noexcept;
+
 [[nodiscard]] uint16_t adb_port_of(const Config& config, size_t index) noexcept;
 // Its name, or its serial when it has none.
 [[nodiscard]] const std::string& label_of(const DeviceConfig& device) noexcept;
+// A device sits on an edge `edge` pixels long (a monitor's, or another device's).
+// Its length along it: the pixels given, the ratio of the edge given, or all of it.
+[[nodiscard]] int edge_length_of(const DeviceConfig& device, int edge) noexcept;
+// Whether its start is given (pixels or a ratio); otherwise it is centred.
+[[nodiscard]] bool edge_start_given(const DeviceConfig& device) noexcept;
+// Its start from the start of the edge; only when edge_start_given().
+[[nodiscard]] int edge_start_of(const DeviceConfig& device, int edge) noexcept;
+// Sets the start or the length as a ratio of the edge, and drops the pixels.
+void set_start_ratio(DeviceConfig& device, double ratio) noexcept;
+void set_length_ratio(DeviceConfig& device, double ratio) noexcept;
+// Forgets the length: the device then covers the whole edge.
+void clear_length(DeviceConfig& device) noexcept;
+
 // The device a name or a serial means, or the count of devices when none.
 [[nodiscard]] size_t find_device(const Config& config, std::string_view name_or_serial) noexcept;
 

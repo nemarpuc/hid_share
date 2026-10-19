@@ -24,6 +24,9 @@ void setup(float scale);
 [[nodiscard]] const char* mark(const std::string& state, bool enabled);
 
 void dim(const char* text);
+// Long help that stays out of the way: a line to open, closed until it is asked
+// for. `summary` is also its id on the page.
+void note(const char* summary, const char* text);
 // A switch: a track with a knob, filled when on. Returns true when it was
 // clicked, and `on` is then the new value.
 bool toggle(const char* id, bool* on);

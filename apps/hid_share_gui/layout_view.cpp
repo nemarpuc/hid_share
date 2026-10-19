@@ -28,9 +28,8 @@ struct Box {
 // Where a device sits, in the PC's pixels.
 struct Placed {
     Box box;
-    // The display as it is held, and its pixels per millimetre (0: unknown).
+    // The display as it is held.
     Size view{};
-    double per_mm{};
     // PC pixels per pixel of the device, as drawn.
     double scale{};
     // False while its size is not known and its shape is a guess.
@@ -99,24 +98,16 @@ Box beside_box(const Box& host, const Side side, const float from, const float l
 }
 
 void measure(const App& app, const DeviceConfig& device, Placed& out) {
-    Size natural{device.width, device.height};
+    Size natural{view_width(device), view_height(device)};
     int width = 0;
     int height = 0;
     if ((natural.w <= 0 || natural.h <= 0) &&
         std::sscanf(status_of(app, device, "size").c_str(), "%dx%d", &width, &height) == 2)
         natural = {width, height};
     out.sized = natural.w > 0 && natural.h > 0;
-    out.per_mm = std::strtod(status_of(app, device, "density").c_str(), nullptr);
-    if (out.sized && device.diagonal_inch > 0.0)
-        out.per_mm = std::hypot(natural.w, natural.h) / (device.diagonal_inch * 25.4);
-    if (!out.sized) {
+    if (!out.sized)
         natural = {1600, 2560};
-        out.per_mm = 0.0;
-    }
-    int rotation = device.rotation;
-    if (rotation < 0)
-        rotation = std::atoi(status_of(app, device, "rotation").c_str());
-    out.view = view_size(natural, rotation, device.mount_rotation);
+    out.view = natural;
     out.side = device.side;
 }
 
@@ -124,30 +115,15 @@ void place_on_monitor(const App& app, const DeviceConfig& device, Placed& out) {
     const size_t index = monitor_index(app, device);
     const Monitor& monitor = app.monitors[index];
     const bool is_vertical = vertical(device.side);
-    double pc = monitor_density(monitor, !is_vertical);
-    if (device.monitor_diagonal_inch > 0.0)
-        pc = std::hypot(monitor.rect.w, monitor.rect.h) / (device.monitor_diagonal_inch * 25.4);
-    if (pc <= 0.0)
-        pc = monitor_density(monitor, is_vertical);
-
     const Span edge = is_vertical ? Span{monitor.rect.y, monitor.rect.y + monitor.rect.h - 1}
                                   : Span{monitor.rect.x, monitor.rect.x + monitor.rect.w - 1};
     PortalRequest request;
     request.monitor = index;
     request.side = device.side;
     request.android_length = is_vertical ? out.view.h : out.view.w;
-    if (device.segment_length > 0) {
-        request.anchor_length = device.segment_length;
-    } else if (out.sized && out.per_mm > 0.0 && pc > 0.0) {
-        request.anchor_length =
-            static_cast<int>(std::lround(request.android_length / out.per_mm * pc));
-    } else {
-        request.anchor_length = edge.length() / 3;
-        out.sized = false;
-    }
-    request.anchor_length = std::max(request.anchor_length, 2);
-    request.centered = device.segment_start == centred_start;
-    request.anchor_start = edge.lo + device.segment_start;
+    request.anchor_length = edge_length_of(device, edge.length());
+    request.centered = !edge_start_given(device);
+    request.anchor_start = edge.lo + (request.centered ? 0 : edge_start_of(device, edge.length()));
     request.corner_margin = device.corner_margin;
     Portal portal;
     out.error = resolve_portal(app.monitors, request, portal);
@@ -175,17 +151,9 @@ void place_beside(const DeviceConfig& device, const size_t host, const Placed& p
     const bool is_vertical = vertical(device.side);
     const int parent_length = is_vertical ? parent.view.h : parent.view.w;
     const int own_length = is_vertical ? out.view.h : out.view.w;
-    int length = parent_length / 2;
-    if (device.segment_length > 0) {
-        length = device.segment_length;
-    } else if (out.sized && out.per_mm > 0.0 && parent.per_mm > 0.0) {
-        length = static_cast<int>(std::lround(own_length / out.per_mm * parent.per_mm));
-    } else {
-        out.sized = false;
-    }
-    length = std::max(length, 2);
-    const int start =
-        device.segment_start == centred_start ? (parent_length - length) / 2 : device.segment_start;
+    const int length = edge_length_of(device, parent_length);
+    const int start = edge_start_given(device) ? edge_start_of(device, parent_length)
+                                               : (parent_length - length) / 2;
     out.anchor = {start, start + length - 1};
     out.cross = {std::max(start, 0), std::min(start + length - 1, parent_length - 1)};
     if (out.cross.hi - out.cross.lo < 1) {
@@ -252,20 +220,6 @@ bool hangs_from(const App& app, size_t index, const size_t of) {
 }
 
 } // namespace
-
-bool effective_placement(const App& app, const size_t device, int& start, int& length) {
-    const std::vector<Placed> placed = place_all(app);
-    if (device >= placed.size() || !placed[device].ok)
-        return false;
-    const DeviceConfig& config = app.config.devices[device];
-    const int base = placed[device].on_monitor
-                         ? (vertical(config.side) ? app.monitors[placed[device].host].rect.y
-                                                  : app.monitors[placed[device].host].rect.x)
-                         : 0;
-    start = placed[device].anchor.lo - base;
-    length = placed[device].anchor.length();
-    return true;
-}
 
 void draw_layout(App& app) {
     if (app.monitors.empty()) {
@@ -417,26 +371,29 @@ void draw_layout(App& app) {
                 if (app.daemon_running)
                     moved.monitor = app.monitors[target.host].name;
                 moved.beside.clear();
-                // A length is in its host's pixels: it does not carry over.
-                if (kind_changed)
-                    moved.segment_length = -1;
+                // A length in pixels is in its host's pixels: it does not carry over. A
+                // ratio of the edge does.
+                if (kind_changed && moved.segment_length > 0)
+                    clear_length(moved);
                 const int length =
                     kind_changed ? static_cast<int>(own_length) : self.anchor.length();
-                moved.segment_start =
+                const int start =
                     std::clamp(static_cast<int>(target.start) - edge_lo, 2 - length, edge_len - 2);
+                set_start_ratio(moved, static_cast<double>(start) / edge_len);
             } else {
                 const Placed& host = placed[target.host];
                 const bool same_host = !self.on_monitor && self.host == target.host;
                 moved.beside = devices[target.host].serial;
-                if (!same_host)
-                    moved.segment_length = -1;
+                if (!same_host && moved.segment_length > 0)
+                    clear_length(moved);
                 const float in_host = (target.start - edge_origin(host.box, target.side)) /
                                       static_cast<float>(host.scale);
                 const int host_len = vertical(target.side) ? host.view.h : host.view.w;
                 const int length =
                     same_host ? self.anchor.length() : static_cast<int>(own_length / host.scale);
-                moved.segment_start =
-                    std::clamp(static_cast<int>(in_host), 2 - length, host_len - 2);
+                set_start_ratio(moved, static_cast<double>(std::clamp(static_cast<int>(in_host),
+                                                                      2 - length, host_len - 2)) /
+                                           host_len);
             }
             moved.side = target.side;
             edited_directly(app, moved.serial, "placement");
@@ -453,12 +410,21 @@ void draw_layout(App& app) {
             std::clamp(static_cast<int>(std::lround(static_cast<float>(anchor.length()) *
                                                     std::pow(1.06F, ImGui::GetIO().MouseWheel))),
                        20, 20000);
-        const int base = placed[app.device].on_monitor
-                             ? (vertical(moved.side) ? app.monitors[placed[app.device].host].rect.y
-                                                     : app.monitors[placed[app.device].host].rect.x)
+        const Placed& here = placed[app.device];
+        const int base = here.on_monitor
+                             ? (vertical(moved.side) ? app.monitors[here.host].rect.y
+                                                     : app.monitors[here.host].rect.x)
                              : 0;
-        moved.segment_start = anchor.lo + (anchor.length() - length) / 2 - base;
-        moved.segment_length = length;
+        // The ratios are of the host's edge.
+        const int host_edge =
+            here.on_monitor ? (vertical(moved.side) ? app.monitors[here.host].rect.h
+                                                    : app.monitors[here.host].rect.w)
+                            : (vertical(moved.side) ? placed[here.host].view.h
+                                                    : placed[here.host].view.w);
+        set_start_ratio(moved,
+                        static_cast<double>(anchor.lo + (anchor.length() - length) / 2 - base) /
+                            host_edge);
+        set_length_ratio(moved, static_cast<double>(length) / host_edge);
         edited_directly(app, moved.serial, "placement");
         placed = place_all(app);
     }

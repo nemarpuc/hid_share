@@ -7,6 +7,7 @@
 #include "hid_share/geometry.hpp"
 #include "hid_share/keymap.hpp"
 #include "hid_share/position_cell.hpp"
+#include "hid_share/probe.hpp"
 #include "hid_share/session.hpp"
 #include "hid_share/tracker.hpp"
 
@@ -27,12 +28,10 @@ std::vector<Monitor> two_monitors() {
 }
 
 // What Android does with a relative mouse: scale by a gain, clamp to the
-// display. It works in the display's own axes, so a mounted (rotated) phone
-// is modelled by converting to view space only for the checks.
+// display, in the axes the mouse is shown in.
 struct FakeAndroid final : Sink {
     Size logical{};
     Size view{};
-    int mount{};
     double x{};
     double y{};
     double gain_lo{1.0};
@@ -79,31 +78,8 @@ struct FakeAndroid final : Sink {
     std::vector<SwipePlan> swipes;
     void swipe(const SwipePlan& plan) override { swipes.push_back(plan); }
 
-    // The cursor in view space, derived independently of to_device_delta().
-    [[nodiscard]] double view_x() const {
-        switch (mount) {
-        case 90:
-            return view.w - 1.0 - y;
-        case 180:
-            return view.w - 1.0 - x;
-        case 270:
-            return y;
-        default:
-            return x;
-        }
-    }
-    [[nodiscard]] double view_y() const {
-        switch (mount) {
-        case 90:
-            return x;
-        case 180:
-            return view.h - 1.0 - y;
-        case 270:
-            return view.h - 1.0 - x;
-        default:
-            return y;
-        }
-    }
+    [[nodiscard]] double view_x() const { return x; }
+    [[nodiscard]] double view_y() const { return y; }
 };
 
 bool inside(const Interval& range, const double value) {
@@ -126,6 +102,236 @@ double real_edge_distance(const FakeAndroid& phone, const Side side) {
 }
 
 } // namespace
+
+TEST_CASE("a probe axis totals its presses") {
+    ProbeAxis axis;
+    axis.press(100);
+    axis.press(100);
+    axis.press(10);
+    CHECK(axis.total() == 210);
+    CHECK(axis.last() == 10);
+    axis.clear();
+    CHECK(axis.total() == 0);
+    CHECK(axis.last() == 0);
+}
+
+TEST_CASE("finish takes out the press that moved nothing") {
+    // The wall is 1909 counts away.
+    ProbeAxis axis;
+    for (int i = 0; i < 19; ++i)
+        axis.press(100);
+    for (int i = 0; i < 9; ++i)
+        axis.press(1);
+    CHECK(axis.total() == 1909);
+    // One more single count that moved nothing.
+    axis.press(1);
+    CHECK(axis.finish(1) == 1909);
+}
+
+TEST_CASE("finish is refused unless the latest press is the fine step") {
+    ProbeAxis axis;
+    axis.press(1);
+    CHECK(axis.finish(1) == 0);
+    axis.clear();
+    axis.press(100);
+    axis.press(10);
+    CHECK(axis.finish(1) == 0);
+    axis.clear();
+    axis.press(100);
+    axis.press(1);
+    CHECK(axis.finish(1) == 100);
+}
+
+TEST_CASE("a board that gives no ids announces the test id") {
+    DeviceConfig board;
+    board.link = LinkKind::mim;
+    const MimDevice plain = mim_of(board);
+    CHECK(plain.vendor_id == 0x1209);
+    CHECK(plain.product_id == 0x0001);
+    CHECK(plain.manufacturer == "Generic");
+    CHECK(plain.product == "USB Input Device");
+    CHECK(uses_test_id(plain));
+
+    // A string given alone leaves the ids at the test id.
+    board.mim.manufacturer = "maker";
+    CHECK(mim_of(board).manufacturer == "maker");
+    CHECK(mim_of(board).vendor_id == 0x1209);
+
+    // The two ids are one unit: one given alone is not completed.
+    DeviceConfig half;
+    half.mim.vendor_id = 0x046d;
+    CHECK(mim_of(half).vendor_id == 0x046d);
+    CHECK(mim_of(half).product_id == 0);
+    CHECK_FALSE(uses_test_id(mim_of(half)));
+
+    DeviceConfig given;
+    given.mim.vendor_id = 0x1234;
+    given.mim.product_id = 0x5678;
+    given.mim.manufacturer = "m";
+    given.mim.product = "p";
+    const MimDevice own = mim_of(given);
+    CHECK(own.vendor_id == 0x1234);
+    CHECK(own.product_id == 0x5678);
+    CHECK(own.manufacturer == "m");
+    CHECK(own.product == "p");
+    CHECK_FALSE(uses_test_id(own));
+}
+
+TEST_CASE("language_id is read, written and never zero") {
+    DeviceConfig board;
+    board.serial = "mim-x";
+    board.link = LinkKind::mim;
+    board.mim.language_id = 0x0407;
+    DeviceConfig back;
+    REQUIRE(parse_device(format_device(board), back).empty());
+    CHECK(back.mim.language_id == 0x0407);
+    DeviceConfig fresh;
+    CHECK_FALSE(parse_device("[usb]\nlanguage_id = 0\n", fresh).empty());
+    REQUIRE(parse_device("[usb]\nlanguage_id =\n", fresh).empty());
+    CHECK(fresh.mim.language_id == 0);
+    CHECK(mim_of(fresh).language_id == 0x0409);
+    CHECK(mim_of(back).language_id == 0x0407);
+}
+
+TEST_CASE("interface numbers keep pinned ones and fill the rest from the lowest") {
+    std::array<NodeUsb, usb_nodes> nodes{};
+    const uint8_t mouse_touch = 0b1001;
+    auto numbers = interface_numbers(nodes, mouse_touch);
+    CHECK(numbers[0] == 0);
+    CHECK(numbers[3] == 1);
+    nodes[3].interface_number = 0;
+    numbers = interface_numbers(nodes, mouse_touch);
+    CHECK(numbers[3] == 0);
+    CHECK(numbers[0] == 1);
+}
+
+TEST_CASE("interface numbers are checked against the board's limits") {
+    const std::array<uint32_t, 2> two = {0, 1};
+    const std::array<uint32_t, 3> three = {0, 1, 2};
+    const std::array<uint32_t, 1> far = {5};
+    CHECK(interface_limit_error(two, 4, 4).empty());
+    const std::string nodes = interface_limit_error(three, 2, 4);
+    CHECK(nodes.find('2') != std::string::npos);
+    const std::string number = interface_limit_error(far, 4, 4);
+    CHECK(number.find('4') != std::string::npos);
+    CHECK(number.find('5') != std::string::npos);
+}
+
+TEST_CASE("Nodes may share an interface when each has its own Report ID") {
+    std::array<NodeUsb, usb_nodes> nodes{};
+    const uint8_t mouse_keyboard = 0b0011;
+    // Apart, nothing is asked of the Report IDs.
+    CHECK(shared_interface_error(nodes, mouse_keyboard).empty());
+    nodes[0].interface_number = 0;
+    nodes[1].interface_number = 0;
+    // Together, both need one.
+    CHECK_FALSE(shared_interface_error(nodes, mouse_keyboard).empty());
+    nodes[0].report_id = 1;
+    CHECK_FALSE(shared_interface_error(nodes, mouse_keyboard).empty());
+    nodes[1].report_id = 1;
+    CHECK_FALSE(shared_interface_error(nodes, mouse_keyboard).empty());
+    nodes[1].report_id = 2;
+    CHECK(shared_interface_error(nodes, mouse_keyboard).empty());
+    // A Node that is not wanted does not count.
+    nodes[1].report_id.reset();
+    CHECK(shared_interface_error(nodes, 0b0001).empty());
+    // The Nodes that were not pinned go to the lowest numbers left, apart from these.
+    const auto numbers = interface_numbers(nodes, 0b0111);
+    CHECK(numbers[0] == 0);
+    CHECK(numbers[1] == 0);
+    CHECK(numbers[2] == 1);
+}
+
+TEST_CASE("a Node's USB interface values are read, written and checked") {
+    DeviceConfig board;
+    board.serial = "mim-x";
+    board.link = LinkKind::mim;
+    board.mim.node[3].interface_number = 3;
+    board.mim.node[3].report_id = 5;
+    board.mim.node[3].interface_name = "Pad";
+    board.mim.node[3].ep_in_size = 32;
+    const std::string text = format_device(board);
+    CHECK(text.find("[usb.touch]") != std::string::npos);
+    CHECK(text.find("[usb.mouse]") == std::string::npos);
+    DeviceConfig back;
+    REQUIRE(parse_device(text, back).empty());
+    CHECK(back.mim.node[3] == board.mim.node[3]);
+
+    const auto refused = [](const char* section, const char* line) {
+        DeviceConfig d;
+        return !parse_device(std::string("[") + section + "]\n" + line + "\n", d).empty();
+    };
+    CHECK(refused("usb.mouse", "poll_interval_ms = 0"));
+    CHECK(refused("usb.mouse", "poll_interval_ms = 256"));
+    CHECK(refused("usb.mouse", "ep_in_size = 65"));
+    CHECK(refused("usb.mouse", "ep_in_size = 0"));
+    CHECK_FALSE(refused("usb.mouse", "ep_in_size = 6"));
+    CHECK_FALSE(refused("usb.mouse", "ep_out_size = 5"));
+    CHECK(refused("usb.mouse", "ep_out_size = 65"));
+    CHECK(refused("usb.mouse", "report_id = 0"));
+    CHECK(refused("usb.mouse", "report_id = 256"));
+    CHECK(refused("usb.mouse", "boot_protocol = 1"));
+    CHECK(refused("usb.mouse", "interface_name = 0123456789012345678901234567890x"));
+    CHECK(refused("usb.pen", "report_id = 1"));
+    CHECK_FALSE(refused("usb.mouse", "ep_out_size = 0"));
+
+    DeviceConfig same;
+    REQUIRE(parse_device("[usb.mouse]\nreport_id = 7\n[usb.keyboard]\nreport_id = 7\n", same)
+                .empty());
+    CHECK(same.mim.node[0].report_id == 7U);
+    CHECK(same.mim.node[1].report_id == 7U);
+}
+
+TEST_CASE("the touchscreen's HID values are read, written and checked") {
+    DeviceConfig device;
+    device.serial = "ABC1";
+    REQUIRE(parse_device("[touch_hid]\n", device).empty());
+    CHECK(device.touch_hid == TouchHid());
+
+    device.touch_hid.maximum_contacts = 5;
+    device.touch_hid.pressure_max = 255;
+    const std::string text = format_device(device);
+    CHECK(text.find("[touch_hid]") != std::string::npos);
+    DeviceConfig back;
+    REQUIRE(parse_device(text, back).empty());
+    CHECK(back.touch_hid == device.touch_hid);
+
+    const auto refused = [](const char* line) {
+        DeviceConfig d;
+        return !parse_device(std::string("[touch_hid]\n") + line + "\n", d).empty();
+    };
+    CHECK(refused("maximum_contacts = 0"));
+    CHECK(refused("maximum_contacts = 17"));
+    CHECK(refused("coordinate_bits = 7"));
+    CHECK(refused("contact_id_bits = 9"));
+    CHECK(refused("pressure_bits = 8"));
+    CHECK(refused("scan_time_unit_100us = 0"));
+
+    // The report carries no more contacts than the screen has.
+    Config config;
+    config.devices.push_back(DeviceConfig());
+    config.devices[0].serial = "ABC1";
+    config.devices[0].touch_hid.maximum_contacts = 5;
+    config.devices[0].touch_hid.contacts_per_report = 6;
+    CHECK_FALSE(validate_config(config).empty());
+    config.devices[0].touch_hid.contacts_per_report = 5;
+    CHECK(validate_config(config).empty());
+}
+
+TEST_CASE("a placement start may be negative, in pixels or as a percent") {
+    const auto start_of = [](const char* value, DeviceConfig& d) {
+        return parse_device(std::string("[placement]\nstart = ") + value + "\n", d);
+    };
+    DeviceConfig d;
+    CHECK(start_of("-50", d).empty());
+    CHECK(start_of("-10%", d).empty());
+    REQUIRE(d.start_ratio.has_value());
+    CHECK(*d.start_ratio == doctest::Approx(-0.1));
+    CHECK(start_of("-100%", d).empty());
+    CHECK_FALSE(start_of("-101%", d).empty());
+    CHECK_FALSE(start_of("-", d).empty());
+    CHECK_FALSE(start_of("--5", d).empty());
+}
 
 TEST_CASE("outer spans leave out what the neighbour covers") {
     const auto monitors = two_monitors();
@@ -177,17 +383,6 @@ TEST_CASE("a portal keeps to the outer edge and maps both ways") {
     CHECK(portal.segment.hi == 1049);
 }
 
-TEST_CASE("view size and mount rotation") {
-    CHECK(view_size({1600, 2560}, 0, 0).w == 1600);
-    CHECK(view_size({1600, 2560}, 90, 0).w == 2560);
-    CHECK(view_size({1600, 2560}, 90, 90).w == 1600);
-    const Delta right{5, 0};
-    CHECK(to_device_delta(0, right).x == 5);
-    CHECK(to_device_delta(90, right).y == -5);
-    CHECK(to_device_delta(180, right).x == -5);
-    CHECK(to_device_delta(270, right).y == 5);
-}
-
 TEST_CASE("the acceleration curve joins up and never falls below its base") {
     // AOSP's constants leave a step of about 0.05% where two segments meet.
     const double edges[] = {32.002, 52.83, 119.124};
@@ -216,48 +411,41 @@ TEST_CASE("the acceleration curve joins up and never falls below its base") {
 
 TEST_CASE("round trips keep the estimate around the real cursor") {
     const Side sides[] = {Side::left, Side::right, Side::top, Side::bottom};
-    const int angles[] = {0, 90, 180, 270};
     const double sensitivities[] = {0.3, 1.0, 2.7};
     std::mt19937 random(11);
 
     for (const Side side : sides) {
-        for (const int mount : angles) {
-            for (const int rotation : angles) {
-                for (const int variant : {0, 1, 2, 3}) {
-                    const bool exact = variant < 2;
-                    const bool park = variant % 2 != 0;
-                    for (const double sensitivity : sensitivities) {
-                        CAPTURE(park);
-                        CAPTURE(static_cast<int>(side));
-                        CAPTURE(mount);
-                        CAPTURE(rotation);
-                        CAPTURE(exact);
-                        CAPTURE(sensitivity);
+        for (const int variant : {0, 1, 2, 3}) {
+            const bool exact = variant < 2;
+            const bool park = variant % 2 != 0;
+            for (const double sensitivity : sensitivities) {
+                CAPTURE(park);
+                CAPTURE(static_cast<int>(side));
+                CAPTURE(exact);
+                CAPTURE(sensitivity);
 
-                        FakeAndroid phone;
-                        phone.mount = mount;
-                        phone.view = view_size({1600, 2560}, rotation, mount);
-                        phone.logical = view_size({1600, 2560}, rotation, 0);
-                        phone.x = 123.0;
-                        phone.y = 456.0;
-                        if (!exact) {
-                            phone.gain_lo = 2.04;
-                            phone.gain_hi = 9.6;
-                        }
+                FakeAndroid phone;
+                phone.view = phone.logical = {1600, 2560};
+                phone.x = 123.0;
+                phone.y = 456.0;
+                if (!exact) {
+                    phone.gain_lo = 2.04;
+                    phone.gain_hi = 9.6;
+                }
 
-                        Portal portal;
-                        portal.side = side;
-                        portal.anchor = {200, 900};
-                        portal.segment = {200, 900};
-                        portal.android_length = vertical(side) ? phone.view.h : phone.view.w;
+                Portal portal;
+                portal.side = side;
+                portal.anchor = {200, 900};
+                portal.segment = {200, 900};
+                portal.android_length = vertical(side) ? phone.view.h : phone.view.w;
 
-                        MotionConfig motion;
-                        motion.scale_x = motion.scale_y = sensitivity;
-                        motion.park = park;
-                        const AccelModel accel(exact ? AccelMode::exact : AccelMode::unknown, 0,
-                                               2.04, 9.6);
-                        Session session(phone);
-                        session.configure(portal, phone.view, mount, motion, accel);
+                MotionConfig motion;
+                motion.scale_x = motion.scale_y = sensitivity;
+                motion.park = park;
+                const AccelModel accel(exact ? AccelMode::exact : AccelMode::unknown, 0,
+                                       2.04, 9.6);
+                Session session(phone);
+                session.configure(portal, phone.view, motion, accel);
 
                         double now = 1.0;
                         for (int trip = 0; trip < 20; ++trip) {
@@ -329,8 +517,6 @@ TEST_CASE("round trips keep the estimate around the real cursor") {
                 }
             }
         }
-    }
-}
 
 TEST_CASE("the second entry aligns from where the cursor was left") {
     FakeAndroid phone;
@@ -340,7 +526,7 @@ TEST_CASE("the second entry aligns from where the cursor was left") {
     portal.anchor = portal.segment = {0, 1079};
     portal.android_length = 2560;
     Session session(phone);
-    session.configure(portal, phone.view, 0, MotionConfig{}, AccelModel{});
+    session.configure(portal, phone.view, MotionConfig{}, AccelModel{});
 
     session.enter(100, 1.0);
     // The corner move is marked to go out on its own.
@@ -371,7 +557,7 @@ TEST_CASE("a parked cursor enters with one report") {
     MotionConfig motion;
     motion.park = true;
     Session session(phone);
-    session.configure(portal, phone.view, 0, motion, AccelModel{});
+    session.configure(portal, phone.view, motion, AccelModel{});
 
     // First entry: the corner reference, then the height.
     session.enter(100, 1.0);
@@ -442,7 +628,6 @@ TEST_CASE("a value that was never given is written as nothing, and reads back so
     CHECK(file.find("auto") == std::string::npos);
     // Nothing is written for what was not given, not even an empty value.
     CHECK(file.find("width") == std::string::npos);
-    CHECK(file.find("monitor_diagonal_inch") == std::string::npos);
     CHECK(file.find("[adb]") == std::string::npos);
     DeviceConfig back;
     REQUIRE(parse_device(file, back).empty());
@@ -465,10 +650,10 @@ TEST_CASE("the cursor crosses from one device to the one beside it") {
     MotionConfig motion;
     motion.park = true;
     Session on_a(a);
-    on_a.configure(from_pc, a.view, 0, motion, AccelModel{}, {{Side::right, {500, 1500}, 7}});
+    on_a.configure(from_pc, a.view, motion, AccelModel{}, {{Side::right, {500, 1500}, 7}});
     // B touches no monitor: it is only reached through A.
     Session on_b(b);
-    on_b.configure(Portal{}, b.view, 0, motion, AccelModel{}, {{Side::left, {0, 2399}, 3}}, false);
+    on_b.configure(Portal{}, b.view, motion, AccelModel{}, {{Side::left, {0, 2399}, 3}}, false);
     CHECK(!on_b.edge_hit(100, 5.0, false, 1.0));
 
     on_a.enter(100, 1.0);
@@ -519,7 +704,7 @@ TEST_CASE("crossing waits for the push, the segment and a free button") {
     MotionConfig motion;
     motion.enter_push = 30.0;
     Session session(phone);
-    session.configure(portal, phone.view, 0, motion, AccelModel{});
+    session.configure(portal, phone.view, motion, AccelModel{});
 
     CHECK_FALSE(session.edge_hit(50, 100.0, false, 1.0));
     CHECK_FALSE(session.edge_hit(300, 100.0, true, 1.0));
@@ -535,7 +720,7 @@ TEST_CASE("leaving releases what was held") {
     portal.anchor = portal.segment = {0, 999};
     portal.android_length = 1000;
     Session session(phone);
-    session.configure(portal, phone.view, 0, MotionConfig{}, AccelModel{});
+    session.configure(portal, phone.view, MotionConfig{}, AccelModel{});
 
     session.key(0x04, true);
     CHECK(phone.keys_down.empty());
@@ -562,7 +747,7 @@ TEST_CASE("a locked session keeps the input until it is unlocked") {
     portal.anchor = portal.segment = {0, 1079};
     portal.android_length = 2560;
     Session session(phone);
-    session.configure(portal, phone.view, 0, MotionConfig{}, AccelModel{});
+    session.configure(portal, phone.view, MotionConfig{}, AccelModel{});
 
     session.enter(100, 1.0);
     session.motion(50.0, 300.0, 1.01);
@@ -602,7 +787,7 @@ TEST_CASE("a locked session does not hand the cursor to a neighbour") {
     from_pc.anchor = from_pc.segment = {0, 1079};
     from_pc.android_length = 2560;
     Session on_a(a);
-    on_a.configure(from_pc, a.view, 0, MotionConfig{}, AccelModel{},
+    on_a.configure(from_pc, a.view, MotionConfig{}, AccelModel{},
                    {{Side::right, {0, 2559}, 7}});
     on_a.enter(100, 1.0);
     on_a.set_locked(true);
@@ -760,7 +945,6 @@ TEST_CASE("a device's file round-trips and only replaces what it names") {
     CHECK(device.segment_length == -1);
     CHECK(device.corner_margin == doctest::Approx(0.10));
     CHECK(device.rotation == 90);
-    CHECK(device.mount_rotation == 180);
     CHECK(device.width == 1600);
     CHECK(device.height == 0);
     CHECK(device.accel == AccelSetting::off);
@@ -936,55 +1120,45 @@ TEST_CASE("everything in one text reads back as devices") {
 }
 
 TEST_CASE("a view point maps to the touch device's raw coordinates") {
-    const Size natural{1600, 2560};
-    CHECK(to_touch_point(natural, 0, 0, 10.0, 20.0).x == 10);
-    CHECK(to_touch_point(natural, 0, 0, 10.0, 20.0).y == 20);
-    // Rotation 90: display (dx, dy) is raw (Wn-1-dy, dx).
-    const TouchPoint r90 = to_touch_point(natural, 90, 0, 100.0, 30.0);
-    CHECK(r90.x == 1600 - 1 - 30);
-    CHECK(r90.y == 100);
-    const TouchPoint r180 = to_touch_point(natural, 180, 0, 100.0, 30.0);
-    CHECK(r180.x == 1600 - 1 - 100);
-    CHECK(r180.y == 2560 - 1 - 30);
-    // Rotation 270: display (dx, dy) is raw (dy, Hn-1-dx).
-    const TouchPoint r270 = to_touch_point(natural, 270, 0, 100.0, 30.0);
-    CHECK(r270.x == 30);
-    CHECK(r270.y == 2560 - 1 - 100);
-    // Mount 90: view (vx, vy) is display (vy, W-1-vx), W being the view width.
-    const Size view90 = view_size(natural, 0, 90);
-    const TouchPoint m90 = to_touch_point(natural, 0, 90, 100.0, 30.0);
-    CHECK(m90.x == 30);
-    CHECK(m90.y == view90.w - 1 - 100);
+    const Size view{1600, 2560};
+    CHECK(to_touch_point(view, view, 0, 10.0, 20.0).x == 10);
+    CHECK(to_touch_point(view, view, 0, 10.0, 20.0).y == 20);
+
+    // A raw area of another size is scaled to.
+    const TouchPoint s = to_touch_point(view, {800, 1280}, 0, 100.0, 200.0);
+    CHECK(s.x == 50);
+    CHECK(s.y == 100);
+
+    // A point outside the view is clamped, never wrapped.
+    const TouchPoint outside = to_touch_point(view, view, 0, 1e6, -1e6);
+    CHECK(outside.x == view.w - 1);
+    CHECK(outside.y == 0);
 }
 
-TEST_CASE("every rotation and mount keeps the touch point on the device") {
-    const Size natural{1600, 2560};
-    for (const int rotation : {0, 90, 180, 270}) {
-        for (const int mount : {0, 90, 180, 270}) {
-            const Size view = view_size(natural, rotation, mount);
-            // The four corners of the view land on four different corners of
-            // the raw area.
-            std::vector<TouchPoint> corners;
-            for (const double x : {0.0, view.w - 1.0}) {
-                for (const double y : {0.0, view.h - 1.0}) {
-                    const TouchPoint p = to_touch_point(natural, rotation, mount, x, y);
-                    CHECK((p.x == 0 || p.x == natural.w - 1));
-                    CHECK((p.y == 0 || p.y == natural.h - 1));
-                    corners.push_back(p);
-                }
-            }
-            for (size_t a = 0; a < corners.size(); ++a) {
-                for (size_t b = a + 1; b < corners.size(); ++b)
-                    CHECK((corners[a].x != corners[b].x || corners[a].y != corners[b].y));
-            }
-            // A point outside the view is clamped, never wrapped.
-            const TouchPoint outside = to_touch_point(natural, rotation, mount, 1e6, -1e6);
-            CHECK(outside.x >= 0);
-            CHECK(outside.x <= natural.w - 1);
-            CHECK(outside.y >= 0);
-            CHECK(outside.y <= natural.h - 1);
-        }
+TEST_CASE("a quarter turn swaps the raw axes and the corners follow the turn") {
+    // The display as shown is 2560 x 1600; its raw axes are 1600 x 2560.
+    const Size view{2560, 1600};
+    CHECK(touch_raw_size(view, 0).w == 2560);
+    for (const int rotation : {90, 270}) {
+        CHECK(touch_raw_size(view, rotation).w == 1600);
+        CHECK(touch_raw_size(view, rotation).h == 2560);
     }
+    const Size raw = touch_raw_size(view, 90);
+    // Rotation 90: the top left of what is shown is the top right of the raw area.
+    TouchPoint at = to_touch_point(view, raw, 90, 0.0, 0.0);
+    CHECK(at.x == raw.w - 1);
+    CHECK(at.y == 0);
+    at = to_touch_point(view, raw, 90, view.w - 1, view.h - 1);
+    CHECK(at.x == 0);
+    CHECK(at.y == raw.h - 1);
+    // Rotation 270 is the opposite turn: the top left is the raw bottom left.
+    at = to_touch_point(view, raw, 270, 0.0, 0.0);
+    CHECK(at.x == 0);
+    CHECK(at.y == raw.h - 1);
+    // Rotation 180 mirrors both.
+    at = to_touch_point(view, view, 180, 0.0, 0.0);
+    CHECK(at.x == view.w - 1);
+    CHECK(at.y == view.h - 1);
 }
 
 TEST_CASE("the touch settings are read, written back and overridden per device") {
@@ -1029,17 +1203,17 @@ namespace {
 struct TouchRig {
     FakeAndroid phone;
     Session session{phone};
-    Size natural{1600, 2560};
+    // The display as shown, and the touchscreen's raw size for the rotation.
+    Size shown{1600, 2560};
+    Size natural;
     int rotation;
-    int mount;
-    explicit TouchRig(const int rotation_ = 0, const int mount_ = 0)
-        : rotation(rotation_), mount(mount_) {
-        phone.view = phone.logical = view_size(natural, rotation, mount);
+    explicit TouchRig(const int rotation_ = 0) : natural(touch_raw_size(shown, rotation_)), rotation(rotation_) {
+        phone.view = phone.logical = shown;
         Portal portal;
         portal.side = Side::right;
         portal.anchor = portal.segment = {0, 1079};
         portal.android_length = phone.view.h;
-        session.configure(portal, phone.view, mount, MotionConfig{}, AccelModel{});
+        session.configure(portal, phone.view, MotionConfig{}, AccelModel{});
         TouchSetup setup;
         setup.enabled = true;
         setup.natural = natural;
@@ -1053,7 +1227,7 @@ struct TouchRig {
     }
     // Where the session's tracked cursor is, in the device's raw coordinates.
     [[nodiscard]] TouchPoint here() const {
-        return to_touch_point(natural, rotation, mount, session.tracker().x().mid(),
+        return to_touch_point(phone.view, natural, rotation, session.tracker().x().mid(),
                               session.tracker().y().mid());
     }
 };
@@ -1235,15 +1409,15 @@ TEST_CASE("leaving lifts the touch contacts") {
     CHECK(lifts1 == 1);
 }
 
-TEST_CASE("the tap follows every rotation and mount") {
+TEST_CASE("the tap follows every rotation") {
     for (const int rotation : {0, 90, 180, 270}) {
-        for (const int mount : {0, 90, 180, 270}) {
-            TouchRig rig(rotation, mount);
-            rig.session.button(1, true);
-            REQUIRE(rig.phone.touches.size() == 1);
-            CHECK(rig.phone.touches[0].x == rig.here().x);
-            CHECK(rig.phone.touches[0].y == rig.here().y);
-        }
+        TouchRig rig(rotation);
+        rig.session.button(1, true);
+        REQUIRE(rig.phone.touches.size() == 1);
+        CHECK(rig.phone.touches[0].x == rig.here().x);
+        CHECK(rig.phone.touches[0].y == rig.here().y);
+        CHECK(rig.phone.touches[0].x < rig.natural.w);
+        CHECK(rig.phone.touches[0].y < rig.natural.h);
     }
 }
 
@@ -1324,6 +1498,96 @@ TEST_CASE("the gain follows the pointer speed unless one is typed") {
     REQUIRE(
         parse_device("[detected]\ndensity = 340\npointer_speed = 0\ngain = 1.5\n", own).empty());
     CHECK(own.gain == 1.5);
+}
+
+TEST_CASE("the gain follows from the real size and the measured travel") {
+    DeviceConfig device;
+    // The wizard stopped at 1079 counts across and 2399 down; the screen is 1080 x 2400.
+    device.width = 1080;
+    device.height = 2400;
+    CHECK(effective_gain(device) == 0.0);
+    CHECK(gain_source(device) == GainSource::none);
+    device.real_width = 1080;
+    device.real_height = 2400;
+    CHECK(gain_source(device) == GainSource::measured);
+    CHECK(effective_gain(device) == doctest::Approx(1.0));
+
+    // Pixels per count 2.169: both axes together.
+    device.width = 498;  // 497 counts across
+    device.height = 1107; // 1106 counts down
+    CHECK(measured_gain(device) == doctest::Approx((1079.0 + 2399.0) / (497.0 + 1106.0)));
+    CHECK(effective_gain(device) == doctest::Approx(2.1697).epsilon(0.001));
+
+    // The real size is the screen the daemon works in; without it, the travel is.
+    CHECK(view_width(device) == 1080);
+    CHECK(view_height(device) == 2400);
+    DeviceConfig legacy;
+    legacy.width = 1600;
+    legacy.height = 2560;
+    CHECK_FALSE(has_real_size(legacy));
+    CHECK(view_width(legacy) == 1600);
+    CHECK(view_height(legacy) == 2560);
+    legacy.real_width = 1080;
+    CHECK_FALSE(has_real_size(legacy));
+    CHECK(view_width(legacy) == 1600);
+    CHECK(measured_gain(legacy) == 0.0);
+
+    // A typed gain wins, then this, then the pointer speed and density.
+    device.density_dpi = 340;
+    CHECK(gain_source(device) == GainSource::measured);
+    device.gain = 1.5;
+    CHECK(gain_source(device) == GainSource::typed);
+    CHECK(effective_gain(device) == 1.5);
+    device.gain = 0.0;
+    device.real_width = 0;
+    CHECK(gain_source(device) == GainSource::android);
+    CHECK(effective_gain(device) == doctest::Approx(2.169).epsilon(0.001));
+}
+
+TEST_CASE("a tap lands on the pixel the counts moved the cursor to") {
+    // True gain 2: 540 counts across and 1200 down cross a 1081 x 2401 screen.
+    DeviceConfig device;
+    device.width = 541;
+    device.height = 1201;
+    device.real_width = 1081;
+    device.real_height = 2401;
+    const double gain = effective_gain(device);
+    REQUIRE(gain == doctest::Approx(2.0));
+    const Size view{view_width(device), view_height(device)};
+    for (const int rotation : {0, 90, 180, 270}) {
+        const Size raw = touch_raw_size(view, rotation);
+        // The touchscreen is the real size, turned.
+        CHECK(raw.w == (rotation % 180 == 0 ? 1081 : 2401));
+        CHECK(raw.h == (rotation % 180 == 0 ? 2401 : 1081));
+    }
+    const Size raw = touch_raw_size(view, 0);
+    TouchPoint at = to_touch_point(view, raw, 0, 100 * gain, 50 * gain);
+    CHECK(at.x == 200);
+    CHECK(at.y == 100);
+    at = to_touch_point(view, raw, 0, 540 * gain, 1200 * gain);
+    CHECK(at.x == 1080);
+    CHECK(at.y == 2400);
+    // A turned screen: the same pixel, in the touchscreen's own axes.
+    at = to_touch_point(view, touch_raw_size(view, 90), 90, 0.0, 0.0);
+    CHECK(at.x == 2400);
+    CHECK(at.y == 0);
+}
+
+TEST_CASE("the real size is read, written and bounded") {
+    DeviceConfig device;
+    REQUIRE(parse_device("[detected]\nreal_width = 1080\nreal_height = 2400\n", device).empty());
+    CHECK(device.real_width == 1080);
+    CHECK(device.real_height == 2400);
+    DeviceConfig back;
+    REQUIRE(parse_device(format_device(device), back).empty());
+    CHECK(back.real_width == 1080);
+    CHECK(back.real_height == 2400);
+    // Not set, not written.
+    DeviceConfig none;
+    CHECK(format_device(none).find("real_") == std::string::npos);
+    DeviceConfig broken;
+    CHECK_FALSE(parse_device("[detected]\nreal_width = 1\n", broken).empty());
+    CHECK_FALSE(parse_device("[detected]\nreal_height = 70000\n", broken).empty());
 }
 
 TEST_CASE("how the cursor enters is one setting, and the old two keys still read") {
@@ -1439,3 +1703,103 @@ TEST_CASE("a board is written and read back, and its serial comes from its port"
     CHECK_FALSE(parse_globals("[mim]\ntimeout_ms = 60001\n", read).empty());
     CHECK(format_globals(globals).find("[mim]") == std::string::npos);
 }
+
+TEST_CASE("a device's start and length are pixels or a ratio of the edge") {
+    DeviceConfig device;
+    REQUIRE(parse_device("[device]\nserial = S1\n[placement]\nlength = 50%\nstart = 25%\n", device)
+                .empty());
+    CHECK(device.length_ratio.value_or(0.0) == doctest::Approx(0.5));
+    CHECK(device.start_ratio.value_or(0.0) == doctest::Approx(0.25));
+    CHECK(edge_length_of(device, 1080) == 540);
+    CHECK(edge_start_given(device));
+    CHECK(edge_start_of(device, 1080) == 270);
+    // The file reads back as written.
+    DeviceConfig back;
+    REQUIRE(parse_device(format_device(device), back).empty());
+    CHECK(format_device(back) == format_device(device));
+    CHECK(format_device(device).find("length = 50%") != std::string::npos);
+
+    // Pixels take the ratio's place, and no length is the whole edge, centred.
+    REQUIRE(parse_device("[device]\nserial = S1\n[placement]\nlength = 300\n", device).empty());
+    CHECK_FALSE(device.length_ratio.has_value());
+    CHECK(edge_length_of(device, 1080) == 300);
+    DeviceConfig whole;
+    CHECK(edge_length_of(whole, 1080) == 1080);
+    CHECK_FALSE(edge_start_given(whole));
+    set_length_ratio(whole, 0.4);
+    set_start_ratio(whole, 0.1);
+    CHECK(edge_length_of(whole, 1000) == 400);
+    CHECK(edge_start_of(whole, 1000) == 100);
+    clear_length(whole);
+    CHECK(edge_length_of(whole, 1000) == 1000);
+
+    // A ratio is bounded, and the old physical sizes are read and dropped.
+    CHECK_FALSE(parse_device("[device]\nserial = S1\n[placement]\nlength = 0%\n", device).empty());
+    CHECK_FALSE(parse_device("[device]\nserial = S1\n[placement]\nlength = 5000%\n", device).empty());
+    CHECK(parse_device("[device]\nserial = S1\n[placement]\nmonitor_diagonal_inch = 24\n"
+                       "[detected]\ndiagonal_inch = 11\n",
+                       device)
+              .empty());
+    CHECK(format_device(device).find("diagonal") == std::string::npos);
+}
+
+TEST_CASE("a tap lands where the real cursor is, on every side") {
+    const Side sides[] = {Side::left, Side::right, Side::top, Side::bottom};
+    const int angles[] = {0, 90, 180, 270};
+    std::mt19937 random(5);
+    for (const Side side : sides) {
+        for (const bool park : {false, true}) {
+            CAPTURE(static_cast<int>(side));
+            CAPTURE(park);
+            FakeAndroid phone;
+            const Size natural{1600, 2560};
+            phone.view = phone.logical = natural;
+            phone.x = 123.0;
+            phone.y = 456.0;
+            Portal portal;
+            portal.side = side;
+            portal.anchor = portal.segment = {200, 900};
+            portal.android_length = vertical(side) ? phone.view.h : phone.view.w;
+            MotionConfig motion;
+            motion.scale_x = motion.scale_y = 1.0;
+            motion.park = park;
+            Session session(phone);
+            session.configure(portal, phone.view, motion,
+                              AccelModel(AccelMode::exact, 0, 1.0, 1.0));
+            TouchSetup setup;
+            setup.enabled = true;
+            setup.natural = natural;
+            setup.rotation = 0;
+            session.set_touch(setup);
+                    double now = 1.0;
+                    for (int trip = 0; trip < 6; ++trip) {
+                        REQUIRE(session.edge_hit(std::uniform_int_distribution<int>(200, 900)(random),
+                                                 1.0, false, now));
+                        for (int step = 0; step < 15; ++step) {
+                            now += 0.004;
+                            const double dx = std::uniform_int_distribution<int>(-40, 40)(random);
+                            const double dy = std::uniform_int_distribution<int>(-40, 40)(random);
+                            if (session.motion(dx, dy, now))
+                                break;
+                            phone.touches.clear();
+                            session.button(1, true);
+                            REQUIRE(phone.touches.size() == 1);
+                            const TouchPoint real = to_touch_point(phone.view, natural, 0,
+                                                                   phone.view_x(), phone.view_y());
+                            CHECK(std::abs(phone.touches[0].x - real.x) <= 1);
+                            CHECK(std::abs(phone.touches[0].y - real.y) <= 1);
+                            session.button(1, false);
+                        }
+                        while (session.remote()) {
+                            now += 0.004;
+                            const double push = 30.0;
+                            const double dx = side == Side::right ? -push : side == Side::left ? push : 0.0;
+                            const double dy = side == Side::bottom ? -push : side == Side::top ? push : 0.0;
+                            if (session.motion(dx, dy, now))
+                                session.leave();
+                        }
+                        now += 1.0;
+                    }
+                }
+            }
+        }

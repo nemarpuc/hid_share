@@ -68,8 +68,6 @@ class Daemon final : public CaptureHandler {
         bool wants_proxy{};
         Size natural{};
         int rotation{-1};
-        // Android pixels per millimetre.
-        double density{};
         AccelMode mode{AccelMode::unknown};
         // Pixels one count moves the phone's cursor at low speed.
         double gain{1.0};
@@ -221,8 +219,8 @@ class Daemon final : public CaptureHandler {
     std::string last_used_;
     // Devices that are connected but have no file yet.
     std::vector<TargetInfo> new_;
-    // Boards are searched for only when the user asks (rescan); this is set by
-    // the command and taken by the next scan.
+    // Boards are searched for as the daemon starts and when the user asks
+    // (rescan); this is set for each and taken by the next scan.
     std::atomic<bool> probe_boards_{};
     // What the last scan could not do. Capture thread only.
     std::string scan_error_;

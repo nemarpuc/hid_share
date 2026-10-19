@@ -62,27 +62,20 @@ struct Delta {
 [[nodiscard]] std::vector<Span> outer_spans(const std::vector<Monitor>& monitors, size_t index,
                                             Side side);
 
-// Size of the Android display as the user sees it. rotation is Android's
-// display rotation, mount is how far the content appears rotated clockwise.
-[[nodiscard]] Size view_size(Size natural, int rotation, int mount) noexcept;
-
-// A delta in view space to the delta Android has to receive for it.
-[[nodiscard]] Delta to_device_delta(int mount, Delta view) noexcept;
-
 struct TouchPoint {
     int x{};
     int y{};
 };
 
-// A point of view space (rotation and mount both applied, as the user sees the
-// content) to the raw coordinates of a touchscreen in the device's natural
-// orientation. The mount is undone first, then Android's display rotation.
-// Rounded and clamped to the device (docs/MATH.md, "Touch").
-[[nodiscard]] TouchPoint to_touch_point(Size natural, int rotation, int mount, double view_x,
-                                        double view_y) noexcept;
+// The touchscreen's raw size for a display of `view` size, turned `rotation`
+// degrees (0, 90, 180, 270) from the raw axes: a quarter turn swaps them.
+[[nodiscard]] Size touch_raw_size(Size view, int rotation) noexcept;
 
-// Pixels per millimetre along the given axis; 0 when the size is unknown.
-[[nodiscard]] double monitor_density(const Monitor& monitor, bool along_x) noexcept;
+// Maps a point of the display as shown to the touchscreen's raw coordinates
+// (docs/MATH.md, "Touch"). Only touch needs the rotation: a mouse is turned by
+// Android itself.
+[[nodiscard]] TouchPoint to_touch_point(Size view, Size raw, int rotation, double view_x,
+                                        double view_y) noexcept;
 
 // Where the cursor crosses: a span on one monitor edge, and the Android
 // coordinate range it maps onto.

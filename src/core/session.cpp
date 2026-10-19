@@ -41,15 +41,14 @@ double take_whole(double value, double& fraction) noexcept {
 
 } // namespace
 
-void Session::configure(const Portal& portal, const Size view, const int mount,
-                        const MotionConfig& motion, const AccelModel& accel,
-                        std::vector<Neighbour> neighbours, const bool has_pc) {
+void Session::configure(const Portal& portal, const Size view, const MotionConfig& motion,
+                        const AccelModel& accel, std::vector<Neighbour> neighbours,
+                        const bool has_pc) {
     // A contact that is down keeps the raw position it was placed at; the new
-    // layout may turn the display, so it is lifted before anything changes.
+    // layout may change the display's size, so it is lifted before anything changes.
     lift_touch();
     portal_ = portal;
     view_ = view;
-    mount_ = mount;
     motion_ = motion;
     accel_ = accel;
     neighbours_ = std::move(neighbours);
@@ -96,9 +95,9 @@ GainRange Session::send(const Delta counts, const double now, const bool alone) 
     tracker_.sent(counts, gain);
     publish();
     if (alone)
-        sink_.jump(to_device_delta(mount_, counts));
+        sink_.jump(counts);
     else
-        sink_.move(to_device_delta(mount_, counts));
+        sink_.move(counts);
     last_send_ = now;
     return gain;
 }
@@ -148,6 +147,7 @@ void Session::enter_at(const Side edge, const double along, const double now) {
     const bool placed = motion_.park ? accel_.mode() == AccelMode::exact : distance(edge) == 0.0;
     const bool usable = known_ && !motion_.always_corner && placed &&
                         along_range(edge).width() <= motion_.resync_width;
+    bool across = distance(edge) != 0.0;
     if (!usable) {
         // Corner reference: push far past the nearer corner of the entry edge
         // so Android's clamp leaves the cursor exactly there.
@@ -159,6 +159,9 @@ void Session::enter_at(const Side edge, const double along, const double now) {
         when += report_gap_seconds;
         start = sign < 0 ? 0.0 : last;
         known_ = true;
+        across = false;
+    } else if (motion_.park) {
+        across = true;
     }
 
     const double travel = target - start;
@@ -166,7 +169,6 @@ void Session::enter_at(const Side edge, const double along, const double now) {
     const int counts = static_cast<int>(std::lround(travel / ((gain.lo + gain.hi) / 2.0)));
     // Away from the entry edge (parked), the same report also pushes far
     // past it, and Android's clamp puts the cursor exactly on it.
-    const bool across = distance(edge) != 0.0;
     const Delta push = across ? Delta{out.x * far, out.y * far} : Delta{};
     send(is_vertical ? Delta{push.x, counts} : Delta{counts, push.y}, when, across);
 }
@@ -177,17 +179,10 @@ int Session::far_counts() const noexcept {
 }
 
 void Session::park() {
-    // The bottom right corner in Android's own axes, however the device is
-    // mounted: the arrow's tip is its top left, so nearly all of it is off
-    // the display there.
+    // The bottom right corner: the arrow's tip is its top left, so nearly all
+    // of it is off the display there.
     const int far = far_counts();
-    Delta view{far, far};
-    for (const Delta candidate :
-         {Delta{far, far}, Delta{far, -far}, Delta{-far, far}, Delta{-far, -far}}) {
-        const Delta device = to_device_delta(mount_, candidate);
-        if (device.x > 0 && device.y > 0)
-            view = candidate;
-    }
+    const Delta view{far, far};
     tracker_.reset(view_);
     publish();
     send(view, last_send_, true);
@@ -264,7 +259,7 @@ bool Session::motion(const double dx, const double dy, const double now) {
 }
 
 TouchPoint Session::raw_at(const double view_x, const double view_y) const noexcept {
-    return to_touch_point(touch_.natural, touch_.rotation, mount_, view_x, view_y);
+    return to_touch_point(view_, touch_.natural, touch_.rotation, view_x, view_y);
 }
 
 void Session::set_touch(const TouchSetup& setup) {

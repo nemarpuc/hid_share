@@ -149,6 +149,13 @@ void dim(const char* const text) {
     ImGui::PopTextWrapPos();
 }
 
+void note(const char* const summary, const char* const text) {
+    if (ImGui::TreeNode(summary)) {
+        dim(text);
+        ImGui::TreePop();
+    }
+}
+
 void heading(const char* const text) {
     ImGui::Spacing();
     if (g_jump == text) {

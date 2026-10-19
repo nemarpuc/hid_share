@@ -1,10 +1,15 @@
 add_library(hid_share_core STATIC
   core/accel_model.cpp
+  core/clone.cpp
+  core/clone_reports.cpp
+  core/clone_sysfs.cpp
+  core/clone_text.cpp
   core/config.cpp
   core/geometry.cpp
   core/ini_edit.cpp
   core/keys.cpp
   core/keymap.cpp
+  core/probe.cpp
   core/session.cpp
   core/tracker.cpp
 )

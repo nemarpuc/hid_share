@@ -2,12 +2,16 @@
 #include "actions.hpp"
 
 #include "app.hpp"
+#include "field.hpp"
+#include "hid_share/keys.hpp"
 #include "look.hpp"
 #include "paths.hpp"
 #include "store.hpp"
 
 #include <misc/cpp/imgui_stdlib.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <string>
@@ -190,170 +194,180 @@ void device_files(App& app, DeviceConfig& device) {
     }
 }
 
+// One axis of the wizard (docs/MATH.md, "Gain"): presses of 100 and 10 take the
+// cursor near the edge, then single counts. The press of 1 that moves nothing is
+// not counted, so Done keeps the counts before it. A press that passed the edge
+// makes the count wrong: measure again. True when Done was pressed, with the travel in `travel`.
+bool draw_axis_presses(App& app, const std::string& probe, const bool across, int& travel) {
+    ImGui::Spacing();
+    look::dim(across ? "Move right by:" : "Move down by:");
+    for (const int step : {1, 10, 100}) {
+        char label[16];
+        std::snprintf(label, sizeof label, "%d", step);
+        if (ImGui::Button(label, ImVec2(look::px(60), 0))) {
+            const std::string by = std::to_string(step);
+            if (command(app, probe + "move " + (across ? by + " 0" : "0 " + by)) == "ok")
+                app.probe_axis.press(step);
+        }
+        ImGui::SameLine();
+    }
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Counts so far: %d", app.probe_axis.total());
+
+    ImGui::Spacing();
+    ImGui::BeginDisabled(app.probe_axis.finish(1) <= 0);
+    const bool done = ImGui::Button("A press of 1 moved nothing: done");
+    ImGui::EndDisabled();
+    if (done)
+        travel = app.probe_axis.finish(1);
+    return done;
+}
+
 } // namespace
 
-// The cursor is stepped to the corner by raw counts, and the size follows from
-// where it stops: measures the exact gain by stepping to the screen edges.
+// A mouse never says how big the other screen is, so it is measured: the cursor
+// is sent to the top left corner and stepped to the right edge and to the bottom
+// edge by raw counts; the size follows from where it stops.
 void draw_probe(App& app, DeviceConfig& device) {
     if (app.probing && app.probe_serial != device.serial)
         app.probing = false;
 
-    look::heading("Screen Calibration Wizard");
-    look::dim("Directly measures screen bounds by stepping the cursor to each edge.\n"
-              "This sets Width, Height, and Gain = 1.0 without needing manual resolution lookup.\n"
-              "Ensure pointer acceleration is OFF on the device. If you change its pointer speed\n"
-              "later, counts will change and require re-calibration.");
-
     const std::string probe = "probe " + device.serial + " ";
 
     if (!app.probing) {
-        ImGui::BeginDisabled(!app.daemon_running || device.serial.empty());
+        look::note("How the measuring works",
+                   "A mouse only says how far it moved, never how big the other screen is. So you\n"
+                   "measure the travel once: the cursor is sent to the top left corner, and you\n"
+                   "step it to the right edge and then to the bottom edge. Turn the pointer\n"
+                   "acceleration of the other device off first, so a count always moves the cursor\n"
+                   "the same distance. With the real size of that screen typed in, the gain follows\n"
+                   "from the two. It takes about a minute.");
+        ImGui::BeginDisabled(!app.daemon_running || device.serial.empty() ||
+                             status_of(app, device, "serial").empty());
         if (ImGui::Button("Start Calibration Wizard")) {
             const std::string answer = command(app, probe + "corner");
             app.probing = answer == "ok";
             app.probe_step = 1;
             app.probe_serial = device.serial;
             app.failed = !app.probing;
-            app.message = app.probing ? "probe corner" : answer_text(answer);
+            app.message = app.probing ? "The cursor is at the top left corner." : answer_text(answer);
             app.probe_x = 0;
             app.probe_y = 0;
+            app.probe_axis.clear();
+            app.probe_offset = 0;
         }
         ImGui::EndDisabled();
+        if (status_of(app, device, "serial").empty())
+            look::dim("Connect the device first: the cursor is moved on it.");
         return;
     }
 
     if (app.probe_step == 1) {
-        look::heading("Step 1/2: Measure Width (Horizontal)");
-        look::dim("Tip: Pushing slightly past the edge (+5 to +10 counts) is recommended.\n"
-                  "If counts are too few, the cursor may not reach the far edge to tap buttons.");
-
-        ImGui::Spacing();
-        look::dim("Move cursor down to see it clearly (recommended, does not affect measurement):");
+        look::heading("Step 1 of 2: the width");
+        look::dim("The cursor is at the top left corner of the other screen. Press 100 until it is\n"
+                  "at the right edge but do not pass it, then do the same with 10, then with 1.\n"
+                  "When a press of 1 moves nothing, press Done: that press is not counted. If a\n"
+                  "press passed the edge, start again. It helps to move the cursor down first so\n"
+                  "you can see it.");
         if (ImGui::Button("Down 100")) {
-            command(app, probe + "move 0 100");
+            if (command(app, probe + "move 0 100") == "ok")
+                app.probe_offset += 100;
         }
         ImGui::SameLine();
         if (ImGui::Button("Up 100")) {
-            command(app, probe + "move 0 -100");
+            if (command(app, probe + "move 0 -100") == "ok")
+                app.probe_offset = std::max(0, app.probe_offset - 100);
         }
 
-        ImGui::Spacing();
-        look::dim("Move right until cursor reaches the right edge (+10 extra recommended):");
-
-        for (const int step : {1, 10, 100}) {
-            char label[16];
-            std::snprintf(label, sizeof label, "%d", step);
-            if (ImGui::Button(label, ImVec2(look::px(60), 0))) {
-                if (command(app, probe + "move " + std::to_string(step) + " 0") == "ok")
-                    app.probe_x += step;
-            }
-            ImGui::SameLine();
-        }
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("Total counts: %d", app.probe_x);
-
-        ImGui::Spacing();
-        ImGui::BeginDisabled(app.probe_x <= 0);
-        if (ImGui::Button("OK (Proceed to Height)##ok_step1")) {
+        if (draw_axis_presses(app, probe, true, app.probe_x)) {
+            app.probe_axis.clear();
+            app.probe_offset = 0;
             command(app, probe + "corner");
             app.probe_step = 2;
         }
-        ImGui::EndDisabled();
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##cancel_step1")) {
+        if (ImGui::Button("Cancel##cancel_step1"))
             app.probing = false;
-        }
     } else if (app.probe_step == 2) {
-        look::heading("Step 2/2: Measure Height (Vertical)");
-        look::dim("Tip: Pushing slightly past the edge (+5 to +10 counts) is recommended.\n"
-                  "If counts are too few, the cursor may not reach the bottom edge to tap buttons.");
-
-        ImGui::Spacing();
-        look::dim("Move cursor right to see it clearly (recommended, does not affect measurement):");
+        look::heading("Step 2 of 2: the height");
+        look::dim("The cursor is back at the top left corner. Do the same down to the bottom edge:\n"
+                  "100, 10, then 1 without passing it, and Done when a press of 1 moves nothing.\n"
+                  "If a press passed the edge, start again. It helps to move the cursor right\n"
+                  "first.");
         if (ImGui::Button("Right 100")) {
-            command(app, probe + "move 100 0");
+            if (command(app, probe + "move 100 0") == "ok")
+                app.probe_offset += 100;
         }
         ImGui::SameLine();
         if (ImGui::Button("Left 100")) {
-            command(app, probe + "move -100 0");
+            if (command(app, probe + "move -100 0") == "ok")
+                app.probe_offset = std::max(0, app.probe_offset - 100);
         }
 
-        ImGui::Spacing();
-        look::dim("Move down until cursor reaches the bottom edge (+10 extra recommended):");
-
-        for (const int step : {1, 10, 100}) {
-            char label[16];
-            std::snprintf(label, sizeof label, "%d", step);
-            if (ImGui::Button(label, ImVec2(look::px(60), 0))) {
-                if (command(app, probe + "move 0 " + std::to_string(step)) == "ok")
-                    app.probe_y += step;
-            }
-            ImGui::SameLine();
-        }
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("Total counts: %d", app.probe_y);
-
-        ImGui::Spacing();
-        ImGui::BeginDisabled(app.probe_y <= 0);
-        if (ImGui::Button("OK (Review and Save)##ok_step2")) {
+        if (draw_axis_presses(app, probe, false, app.probe_y)) {
+            app.probe_axis.clear();
+            app.probe_offset = 0;
             app.probe_step = 3;
         }
-        ImGui::EndDisabled();
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##cancel_step2")) {
+        if (ImGui::Button("Cancel##cancel_step2"))
             app.probing = false;
-        }
     } else if (app.probe_step == 3) {
-        look::heading("Calibration Result");
+        look::heading("Save the measurement");
 
-        if (device.rotation < 0)
-            device.rotation = 0;
-
-        const char* rotations[] = {"0° (Portrait)", "90° (Landscape)", "180° (Inverted)",
-                                   "270° (Landscape flipped)"};
-        int rot_idx = device.rotation == 90    ? 1
-                      : device.rotation == 180 ? 2
-                      : device.rotation == 270 ? 3
-                                               : 0;
-        ImGui::SetNextItemWidth(look::px(220));
-        if (ImGui::Combo("Screen rotation", &rot_idx, rotations, IM_ARRAYSIZE(rotations))) {
-            device.rotation = rot_idx == 1 ? 90 : rot_idx == 2 ? 180 : rot_idx == 3 ? 270 : 0;
-        }
-
-        const bool turned = device.rotation == 90 || device.rotation == 270;
-        const int comp_w = (turned ? app.probe_y : app.probe_x) + 1;
-        const int comp_h = (turned ? app.probe_x : app.probe_y) + 1;
-
+        // The mouse is measured as the screen is shown, whatever way it is turned.
+        const int comp_w = app.probe_x + 1;
+        const int comp_h = app.probe_y + 1;
         char buf[300];
-        std::snprintf(buf, sizeof buf, "Measured counts: X = %d, Y = %d\n"
-                                       "Calculated screen size: %d x %d (Gain = 1.0, Accel = off)\n\n"
-                                       "Note: If you change pointer speed/settings on your device later,\n"
-                                       "please re-run this calibration.",
-                      app.probe_x, app.probe_y, comp_w, comp_h);
+        std::snprintf(buf, sizeof buf,
+                      "Measured: %d counts across and %d down, with pointer acceleration off. If you\n"
+                      "change the pointer speed of the device later, measure again.",
+                      app.probe_x, app.probe_y);
+        ImGui::Spacing();
         look::dim(buf);
 
+        // The real size (a beta setting) is typed in the Beta tab; with it the gain
+        // is the real size over the counts.
+        if (has_real_size(device) && app.probe_x > 0 && app.probe_y > 0) {
+            const double across = (device.real_width - 1.0) / app.probe_x;
+            const double down = (device.real_height - 1.0) / app.probe_y;
+            const double both =
+                (device.real_width - 1.0 + device.real_height - 1.0) / (app.probe_x + app.probe_y);
+            std::snprintf(buf, sizeof buf, "Gain: %.4g px per count (across alone %.4g, down alone %.4g).",
+                          both, across, down);
+            look::dim(buf);
+            if (std::fabs(across - down) > 0.01 * both)
+                look::dim("The two differ by more than 1%: one edge was passed or stopped short of.\n"
+                          "Measure again before saving.");
+        } else {
+            look::dim("Without the real size the gain is 1 and the sizes stay counts.");
+        }
+
         ImGui::Spacing();
-        if (ImGui::Button("Save and Apply")) {
+        if (ImGui::Button("Save")) {
             device.width = comp_w;
             device.height = comp_h;
-            device.gain = 1.0;
+            // The gain follows from the real size; without it a count is the unit.
+            device.gain = has_real_size(device) ? 0.0 : 1.0;
             device.accel = AccelSetting::off;
-            if (device.diagonal_inch <= 0.0)
-                device.diagonal_inch = 6.5;
             app.probing = false;
             edited_directly(app, device.serial, "detected");
+            apply(app);
+            // Where it sits is the next thing to set.
+            app.probe_finished = !app.failed;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Restart Wizard")) {
+        if (ImGui::Button("Measure again")) {
             command(app, probe + "corner");
             app.probe_step = 1;
             app.probe_x = 0;
             app.probe_y = 0;
+            app.probe_axis.clear();
+            app.probe_offset = 0;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel##cancel_step3")) {
+        if (ImGui::Button("Cancel##cancel_step3"))
             app.probing = false;
-        }
     }
 }
 

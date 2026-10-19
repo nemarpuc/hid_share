@@ -4,6 +4,7 @@
 #include "hid_share/keys.hpp"
 #include "app.hpp"
 #include "look.hpp"
+#include "setup.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -108,10 +109,11 @@ void draw_summary(App& app, const hids::DeviceConfig* device) {
     }
     const std::string state = status_of(app, *device, "state");
     const std::string reason = status_of(app, *device, "status");
-    ImGui::Text("%s %s", look::mark(state, device->enabled),
+    const std::string shown = mark_state(app, *device);
+    ImGui::Text("%s %s", look::mark(shown, device->enabled),
                 !device->enabled   ? "left alone"
                 : state == "ready" ? "ready"
-                : state == "error" ? "not ready"
+                : shown == "error" ? "not ready"
                                    : "not connected");
     if (state == "ready") {
         if (status_of(app, *device, "locked") == "yes") {
@@ -214,7 +216,6 @@ void draw_status(App& app, const hids::DeviceConfig* device) {
 }
 
 void draw_reports(App& app, const hids::DeviceConfig& device) {
-    look::heading("Reports");
     if (!app.daemon_running) {
         look::dim("daemon: not running");
         return;
@@ -226,7 +227,7 @@ void draw_reports(App& app, const hids::DeviceConfig& device) {
         app.reports_next = 0.0;
     }
     look::dim("What was handed to the device, one line per call. Lines of one report share the "
-              "report number. Recording runs only while this tab is open.");
+              "report number. Recording runs only while this part is open.");
     ImGui::Checkbox("Freeze", &app.reports_frozen);
     ImGui::SameLine();
     if (ImGui::Button("Clear"))
@@ -268,7 +269,8 @@ void draw_reports(App& app, const hids::DeviceConfig& device) {
         }
     }
 
-    ImGui::BeginChild("reports", ImVec2(0, 0), true);
+    ImGui::BeginChild("reports", ImVec2(0, std::max(ImGui::GetContentRegionAvail().y, look::px(240))),
+                      true);
     for (const std::string& line : app.reports)
         ImGui::TextUnformatted(line.c_str());
     if (!app.reports_frozen && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0F)

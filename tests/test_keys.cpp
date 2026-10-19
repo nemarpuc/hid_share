@@ -139,11 +139,11 @@ DeviceConfig full_device() {
     d.name = "Tab";
     d.segment_start = 10;
     d.segment_length = 500;
-    d.monitor_diagonal_inch = 24.0;
     d.rotation = 0;
     d.width = 1000;
     d.height = 2000;
-    d.diagonal_inch = 11.0;
+    d.real_width = 1080;
+    d.real_height = 2400;
     d.density_dpi = 320;
     d.gain = 1.0;
     d.accel = AccelSetting::on;
@@ -168,6 +168,34 @@ DeviceConfig full_device() {
     d.mim.self_powered = true;
     d.mim.remote_wakeup = true;
     d.mim.configuration = "config";
+    d.touch_hid.maximum_contacts = 5;
+    d.touch_hid.contacts_per_report = 2;
+    d.touch_hid.contact_id_max = 4;
+    d.touch_hid.contact_id_bits = 4;
+    d.touch_hid.contact_count_max = 5;
+    d.touch_hid.contact_count_bits = 4;
+    d.touch_hid.coordinate_bits = 16;
+    d.touch_hid.pressure_max = 255;
+    d.touch_hid.pressure_bits = 8;
+    d.touch_hid.width_max = 255;
+    d.touch_hid.width_bits = 8;
+    d.touch_hid.height_max = 255;
+    d.touch_hid.height_bits = 8;
+    d.touch_hid.azimuth_max = 360;
+    d.touch_hid.azimuth_bits = 9;
+    d.touch_hid.scan_time_max = 65535;
+    d.touch_hid.scan_time_bits = 16;
+    d.touch_hid.scan_time_unit_100us = 10;
+    for (NodeUsb& n : d.mim.node) {
+        n.interface_number = 1;
+        n.interface_name = "if";
+        n.poll_interval_ms = 2;
+        n.ep_in_size = 16;
+        n.ep_out_size = 8;
+        n.bcd_hid = 0x0111;
+        n.country_code = 0;
+        n.report_id = 3;
+    }
     return d;
 }
 
@@ -206,7 +234,7 @@ TEST_CASE("every key the library writes is in the table") {
 }
 
 TEST_CASE("every key in the table is accepted by the parser and read back") {
-    const std::map<std::string, std::string> special = {
+    std::map<std::string, std::string> special = {
         {"mouse.buttons", "3"},
         {"touch.scroll_release_ms", "250"},
         {"adb.first_port", "7000"},
@@ -214,19 +242,28 @@ TEST_CASE("every key in the table is accepted by the parser and read back") {
         {"device.serial", "XYZ9"},
         {"placement.rotation", "90"},
         {"placement.side", "left"},
+        {"placement.start", "25%"},
+        {"placement.length", "50%"},
         {"detected.accel", "off"},
         {"detected.density", "320"},
         {"motion.report_rate_hz", "500"},
-        {"placement.turn_input", "90"},
         {"placement.corner_margin", "10%"},
         {"adb.path", "/usr/bin/adb"},
         {"usb.vendor_id", "0x046d"},
         {"usb.product_id", "1234"},
         {"usb.bcd_device", "0x0109"},
+        {"usb.language_id", "0x0407"},
         {"usb.max_power_ma", "480"},
         {"mim.baud", "3000000"},
         {"mim.port", "/dev/ttyUSB1"},
+        {"touch_hid.coordinate_bits", "12"},
     };
+    for (const char* const node : {"mouse", "keyboard", "media", "touch"}) {
+        const std::string section = std::string("usb.") + node + ".";
+        special[section + "bcd_hid"] = "0x0110";
+        special[section + "ep_in_size"] = "32";
+        special[section + "ep_out_size"] = "8";
+    }
     for (const ConfigKey& key : config_keys()) {
         const std::string id = std::string(key.section) + "." + key.key;
         const std::string value = special.count(id) != 0 ? special.at(id) : sample_for(key);

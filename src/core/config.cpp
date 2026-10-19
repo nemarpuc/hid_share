@@ -48,7 +48,9 @@ bool to_int(const std::string_view text, const int low, const int high, int& out
 // from_chars for the deployment targets this builds for. Only plain decimal
 // numbers are accepted, so the C locale's parsing is all that is used.
 bool to_double(const std::string_view text, const double low, const double high, double& out) {
-    if (text.empty() || text.find_first_not_of("0123456789.") != std::string_view::npos)
+    // One minus sign may lead; the range says whether a negative value is allowed.
+    const std::string_view digits = !text.empty() && text.front() == '-' ? text.substr(1) : text;
+    if (digits.empty() || digits.find_first_not_of("0123456789.") != std::string_view::npos)
         return false;
     const std::string copy(text);
     char* end = nullptr;
@@ -130,6 +132,8 @@ bool set_daemon(Config& c, const std::string_view key, const std::string_view va
         c.backend = value;
         return true;
     }
+    if (key == "beta")
+        return to_bool(value, c.beta);
     // Read and dropped: until 0.3.4 the hotkeys were here.
     return key == "toggle_hotkey" || key == "panic_hotkey" || key == "pause_hotkey" ||
            key == "resync_hotkey";
@@ -467,6 +471,8 @@ bool set_usb(DeviceConfig& d, const std::string_view key, const std::string_view
         return to_usb_id(value, d.mim.bcd_device);
     if (key == "max_power_ma")
         return to_usb_power(value, d.mim.max_power_ma);
+    if (key == "language_id")
+        return to_usb_id(value, d.mim.language_id);
     if (key == "self_powered")
         return to_bool(value, d.mim.self_powered);
     if (key == "remote_wakeup")
@@ -475,6 +481,112 @@ bool set_usb(DeviceConfig& d, const std::string_view key, const std::string_view
         return to_usb_text(value, d.mim.configuration);
     return false;
 }
+
+// A number in low..high, or in `allowed` when that is not empty; empty text is a
+// value not given.
+bool to_node_number(const std::string_view value, const unsigned low, const unsigned high,
+                    std::optional<uint32_t>& out) noexcept {
+    if (value.empty()) {
+        out.reset();
+        return true;
+    }
+    unsigned parsed = 0;
+    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (error != std::errc() || end != value.data() + value.size() || parsed < low || parsed > high)
+        return false;
+    out = parsed;
+    return true;
+}
+
+bool to_node_size(const std::string_view value, const bool zero_allowed,
+                  std::optional<uint32_t>& out) noexcept {
+    return to_node_number(value, zero_allowed ? 0 : 1, 64, out);
+}
+
+bool set_node_usb(NodeUsb& n, const std::string_view key, const std::string_view value) {
+    if (key == "interface_number")
+        return to_node_number(value, 0, 255, n.interface_number);
+    if (key == "interface_name")
+        return to_usb_text(value, n.interface_name);
+    if (key == "poll_interval_ms")
+        return to_node_number(value, 1, 255, n.poll_interval_ms);
+    if (key == "ep_in_size")
+        return to_node_size(value, false, n.ep_in_size);
+    if (key == "ep_out_size")
+        return to_node_size(value, true, n.ep_out_size);
+    if (key == "bcd_hid") {
+        uint16_t id = 0;
+        if (!to_usb_id(value, id))
+            return false;
+        n.bcd_hid = id != 0 ? std::optional<uint32_t>(id) : std::nullopt;
+        return true;
+    }
+    if (key == "country_code")
+        return to_node_number(value, 0, 255, n.country_code);
+    if (key == "report_id")
+        return to_node_number(value, 1, 255, n.report_id);
+    return false;
+}
+
+struct TouchHidKey {
+    const char* name;
+    std::optional<uint32_t> TouchHid::*member;
+    unsigned low;
+    unsigned high;
+};
+
+constexpr TouchHidKey touch_hid_keys[] = {
+    {"maximum_contacts", &TouchHid::maximum_contacts, 1, 16},
+    {"contacts_per_report", &TouchHid::contacts_per_report, 1, 16},
+    {"contact_id_max", &TouchHid::contact_id_max, 0, 255},
+    {"contact_id_bits", &TouchHid::contact_id_bits, 1, 8},
+    {"contact_count_max", &TouchHid::contact_count_max, 1, 16},
+    {"contact_count_bits", &TouchHid::contact_count_bits, 1, 8},
+    {"coordinate_bits", &TouchHid::coordinate_bits, 8, 16},
+    {"pressure_max", &TouchHid::pressure_max, 1, 65535},
+    {"pressure_bits", &TouchHid::pressure_bits, 1, 16},
+    {"width_max", &TouchHid::width_max, 1, 65535},
+    {"width_bits", &TouchHid::width_bits, 1, 16},
+    {"height_max", &TouchHid::height_max, 1, 65535},
+    {"height_bits", &TouchHid::height_bits, 1, 16},
+    {"azimuth_max", &TouchHid::azimuth_max, 1, 65535},
+    {"azimuth_bits", &TouchHid::azimuth_bits, 1, 16},
+    {"scan_time_max", &TouchHid::scan_time_max, 1, 65535},
+    {"scan_time_bits", &TouchHid::scan_time_bits, 1, 16},
+    {"scan_time_unit_100us", &TouchHid::scan_time_unit_100us, 1, 65535},
+};
+
+bool set_touch_hid(TouchHid& t, const std::string_view key, const std::string_view value) {
+    for (const TouchHidKey& each : touch_hid_keys) {
+        if (key == each.name)
+            return to_node_number(value, each.low, each.high, t.*each.member);
+    }
+    return false;
+}
+
+// The *_bits of an optional field mean nothing without its *_max.
+std::string touch_hid_problem(const TouchHid& t) {
+    const std::pair<const std::optional<uint32_t>&, const char*> bits[] = {
+        {t.pressure_bits, "pressure"},
+        {t.width_bits, "width"},
+        {t.height_bits, "height"},
+        {t.azimuth_bits, "azimuth"},
+        {t.scan_time_bits, "scan_time"}};
+    const std::optional<uint32_t>* maxima[] = {&t.pressure_max, &t.width_max, &t.height_max,
+                                               &t.azimuth_max, &t.scan_time_max};
+    for (size_t i = 0; i < std::size(bits); ++i) {
+        if (bits[i].first && !*maxima[i])
+            return std::string(bits[i].second) + "_bits is set without " + bits[i].second + "_max";
+    }
+    if (t.scan_time_unit_100us && !t.scan_time_max)
+        return "scan_time_unit_100us is set without scan_time_max";
+    if (t.maximum_contacts && t.contacts_per_report && *t.contacts_per_report > *t.maximum_contacts)
+        return "contacts_per_report is more than maximum_contacts";
+    return {};
+}
+
+constexpr std::array<const char*, usb_nodes> node_section_names = {"usb.mouse", "usb.keyboard",
+                                                                    "usb.media", "usb.touch"};
 
 std::string usb_id_text(const uint16_t id) {
     if (id == 0)
@@ -558,6 +670,32 @@ bool same_ignoring_case(const std::string_view a, const std::string_view b) noex
                       [](const char x, const char y) { return upper(x) == upper(y); });
 }
 
+// A pixel count, or a ratio of the edge written with a percent sign.
+bool set_edge_value(std::string_view value, const int low, const int high, const int unset,
+                    const double ratio_low, const double ratio_high, int& pixels,
+                    std::optional<double>& ratio) {
+    if (!value.empty() && value.back() == '%') {
+        value.remove_suffix(1);
+        double percent = 0.0;
+        if (!to_double(value, ratio_low * 100.0, ratio_high * 100.0, percent))
+            return false;
+        ratio = percent / 100.0;
+        pixels = unset;
+        return true;
+    }
+    ratio.reset();
+    return set_auto_int(value, low, high, unset, pixels);
+}
+
+std::string edge_value_text(const int pixels, const int unset, const std::optional<double>& ratio) {
+    if (ratio) {
+        char text[32];
+        std::snprintf(text, sizeof text, "%.6g%%", *ratio * 100.0);
+        return text;
+    }
+    return pixels == unset ? std::string() : std::to_string(pixels);
+}
+
 bool set_placement(DeviceConfig& d, const std::string_view key, const std::string_view value) {
     if (key == "monitor")
         return to_name(value, d.monitor);
@@ -566,13 +704,17 @@ bool set_placement(DeviceConfig& d, const std::string_view key, const std::strin
     if (key == "side")
         return to_side(value, d.side);
     if (key == "start")
-        return set_auto_int(value, -1000000, 1000000, centred_start, d.segment_start);
+        return set_edge_value(value, -1000000, 1000000, centred_start, -1.0, 2.0, d.segment_start,
+                              d.start_ratio);
     if (key == "length")
-        return set_auto_int(value, 2, 1000000, -1, d.segment_length);
+        return set_edge_value(value, 2, 1000000, -1, 0.01, 10.0, d.segment_length, d.length_ratio);
     if (key == "corner_margin")
         return to_margin(value, d.corner_margin);
-    if (key == "monitor_diagonal_inch")
-        return set_auto_double(value, 1.0, 1000.0, d.monitor_diagonal_inch);
+    // Read and dropped: until 0.4.0 the physical size of a monitor sized the device.
+    if (key == "monitor_diagonal_inch") {
+        double dropped = 0.0;
+        return set_auto_double(value, 1.0, 1000.0, dropped);
+    }
     if (key == "rotation") {
         if (value.empty()) {
             d.rotation = -1;
@@ -580,8 +722,11 @@ bool set_placement(DeviceConfig& d, const std::string_view key, const std::strin
         }
         return to_rotation(value, d.rotation);
     }
-    if (key == "turn_input")
-        return to_rotation(value, d.mount_rotation);
+    // Read and dropped: until 0.3.9 it turned the mouse's movement for a mounted device.
+    if (key == "turn_input") {
+        int dropped = 0;
+        return to_rotation(value, dropped);
+    }
     return false;
 }
 
@@ -590,8 +735,15 @@ bool set_detected(DeviceConfig& d, const std::string_view key, const std::string
         return set_auto_int(value, 2, 100000, 0, d.width);
     if (key == "height")
         return set_auto_int(value, 2, 100000, 0, d.height);
-    if (key == "diagonal_inch")
-        return set_auto_double(value, 1.0, 1000.0, d.diagonal_inch);
+    if (key == "real_width")
+        return set_auto_int(value, 2, 65536, 0, d.real_width);
+    if (key == "real_height")
+        return set_auto_int(value, 2, 65536, 0, d.real_height);
+    // Read and dropped: until 0.4.0 the physical size of the screen sized the device.
+    if (key == "diagonal_inch") {
+        double dropped = 0.0;
+        return set_auto_double(value, 1.0, 1000.0, dropped);
+    }
     if (key == "pointer_speed")
         return to_int(value, -7, 7, d.pointer_speed);
     if (key == "density")
@@ -765,6 +917,41 @@ bool valid_name(const std::string_view text) noexcept {
     return text.empty() || (text.front() != ' ' && text.back() != ' ');
 }
 
+int edge_length_of(const DeviceConfig& device, const int edge) noexcept {
+    if (device.segment_length > 0)
+        return device.segment_length;
+    const int length =
+        device.length_ratio
+            ? static_cast<int>(std::lround(static_cast<double>(edge) * *device.length_ratio))
+            : edge;
+    return std::max(length, 2);
+}
+
+bool edge_start_given(const DeviceConfig& device) noexcept {
+    return device.start_ratio.has_value() || device.segment_start != centred_start;
+}
+
+int edge_start_of(const DeviceConfig& device, const int edge) noexcept {
+    return device.start_ratio
+               ? static_cast<int>(std::lround(static_cast<double>(edge) * *device.start_ratio))
+               : device.segment_start;
+}
+
+void set_start_ratio(DeviceConfig& device, const double ratio) noexcept {
+    device.start_ratio = ratio;
+    device.segment_start = centred_start;
+}
+
+void set_length_ratio(DeviceConfig& device, const double ratio) noexcept {
+    device.length_ratio = ratio;
+    device.segment_length = -1;
+}
+
+void clear_length(DeviceConfig& device) noexcept {
+    device.length_ratio.reset();
+    device.segment_length = -1;
+}
+
 Motion motion_of(const Config& config, const DeviceConfig& device) noexcept {
     Motion m = config.motion;
     const MotionPatch& p = device.motion;
@@ -803,9 +990,46 @@ MotionPatch motion_patch_of(const Motion& m) noexcept {
     return p;
 }
 
+double measured_gain(const DeviceConfig& device) noexcept {
+    if (!has_real_size(device) || device.width < 2 || device.height < 2)
+        return 0.0;
+    return static_cast<double>(device.real_width - 1 + device.real_height - 1) /
+           static_cast<double>(device.width - 1 + device.height - 1);
+}
+
+GainSource gain_source(const DeviceConfig& device) noexcept {
+    if (device.gain > 0.0)
+        return GainSource::typed;
+    if (measured_gain(device) > 0.0)
+        return GainSource::measured;
+    return low_speed_gain(device.pointer_speed, device.density_dpi) > 0.0 ? GainSource::android
+                                                                          : GainSource::none;
+}
+
 double effective_gain(const DeviceConfig& device) noexcept {
-    return device.gain > 0.0 ? device.gain
-                             : low_speed_gain(device.pointer_speed, device.density_dpi);
+    switch (gain_source(device)) {
+    case GainSource::typed:
+        return device.gain;
+    case GainSource::measured:
+        return measured_gain(device);
+    case GainSource::android:
+        return low_speed_gain(device.pointer_speed, device.density_dpi);
+    case GainSource::none:
+        break;
+    }
+    return 0.0;
+}
+
+bool has_real_size(const DeviceConfig& device) noexcept {
+    return device.real_width >= 2 && device.real_height >= 2;
+}
+
+int view_width(const DeviceConfig& device) noexcept {
+    return has_real_size(device) ? device.real_width : device.width;
+}
+
+int view_height(const DeviceConfig& device) noexcept {
+    return has_real_size(device) ? device.real_height : device.height;
 }
 
 bool mouse_of(const Config& config, const DeviceConfig& device) noexcept {
@@ -824,6 +1048,87 @@ Touch touch_of(const Config& config, const DeviceConfig& device) noexcept {
     Touch touch = config.touch;
     apply_touch(touch, device.touch);
     return touch;
+}
+
+std::array<uint32_t, usb_nodes> interface_numbers(const std::array<NodeUsb, usb_nodes>& nodes,
+                                                  const uint8_t wanted) noexcept {
+    std::array<uint32_t, usb_nodes> numbers{};
+    const auto pinned = [&](const size_t n) {
+        return (wanted >> n & 1U) != 0 && nodes[n].interface_number.has_value();
+    };
+    const auto taken = [&](const uint32_t number) {
+        for (size_t n = 0; n < usb_nodes; ++n) {
+            if (pinned(n) && *nodes[n].interface_number == number)
+                return true;
+        }
+        return false;
+    };
+    uint32_t next = 0;
+    for (size_t n = 0; n < usb_nodes; ++n) {
+        if ((wanted >> n & 1U) == 0)
+            continue;
+        if (pinned(n)) {
+            numbers[n] = *nodes[n].interface_number;
+            continue;
+        }
+        while (taken(next))
+            ++next;
+        numbers[n] = next++;
+    }
+    return numbers;
+}
+
+std::string interface_limit_error(const std::span<const uint32_t> numbers,
+                                  const unsigned max_nodes, const unsigned max_interfaces) {
+    if (numbers.size() > max_nodes)
+        return "the board holds " + std::to_string(max_nodes) + " Nodes, and " +
+               std::to_string(numbers.size()) + " are wanted";
+    for (size_t a = 0; a < numbers.size(); ++a) {
+        if (numbers[a] >= max_interfaces)
+            return "the board has " + std::to_string(max_interfaces) +
+                   " USB interfaces (0 to " + std::to_string(max_interfaces - 1) +
+                   "), and interface_number " + std::to_string(numbers[a]) + " is out of them";
+    }
+    return {};
+}
+
+std::string shared_interface_error(const std::array<NodeUsb, usb_nodes>& nodes,
+                                   const uint8_t wanted) {
+    static constexpr const char* names[usb_nodes] = {"mouse", "keyboard", "media keys",
+                                                     "touchscreen"};
+    const std::array<uint32_t, usb_nodes> numbers = interface_numbers(nodes, wanted);
+    for (size_t a = 0; a < usb_nodes; ++a) {
+        for (size_t b = a + 1; b < usb_nodes; ++b) {
+            if ((wanted >> a & 1U) == 0 || (wanted >> b & 1U) == 0 || numbers[a] != numbers[b])
+                continue;
+            const std::string pair = std::string(names[a]) + " and " + names[b] +
+                                     " share the interface " + std::to_string(numbers[a]);
+            if (!nodes[a].report_id || !nodes[b].report_id)
+                return pair + ", so each needs a report_id";
+            if (*nodes[a].report_id == *nodes[b].report_id)
+                return pair + ", so their report_id must differ";
+        }
+    }
+    return {};
+}
+
+MimDevice mim_of(const DeviceConfig& device) {
+    MimDevice mim = device.mim;
+    if (mim.vendor_id == 0 && mim.product_id == 0) {
+        mim.vendor_id = default_usb_vendor_id;
+        mim.product_id = default_usb_product_id;
+    }
+    if (mim.manufacturer.empty())
+        mim.manufacturer = default_usb_manufacturer;
+    if (mim.product.empty())
+        mim.product = default_usb_product;
+    if (mim.language_id == 0)
+        mim.language_id = default_usb_language_id;
+    return mim;
+}
+
+bool uses_test_id(const MimDevice& mim) noexcept {
+    return mim.vendor_id == default_usb_vendor_id && mim.product_id == default_usb_product_id;
 }
 
 uint16_t adb_port_of(const Config& config, const size_t index) noexcept {
@@ -946,6 +1251,7 @@ std::string format_globals(const Config& c) {
     Writer out;
     out.section("daemon");
     out.put("backend", c.backend);
+    out.put("beta", yes_no(c.beta));
 
     out.section("mouse");
     out.put("enabled", yes_no(c.mouse));
@@ -998,9 +1304,13 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
         touch,
         adb,
         mim,
-        usb
+        usb,
+        usb_node,
+        touch_hid,
+        clone
     };
     Section section = Section::device;
+    size_t node = 0;
     const auto set_optional = [](const std::string_view value, std::optional<bool>& slot) {
         bool parsed = false;
         if (!to_bool(value, parsed))
@@ -1035,7 +1345,19 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
                 section = Section::mim;
             else if (name == "usb")
                 section = Section::usb;
-            else
+            else if (name == "touch_hid")
+                section = Section::touch_hid;
+            else if (name == "clone") {
+                section = Section::clone;
+                if (!device.clone)
+                    device.clone.emplace();
+            }
+            else if (const auto* at = std::find(node_section_names.begin(),
+                                                node_section_names.end(), name);
+                     at != node_section_names.end()) {
+                section = Section::usb_node;
+                node = static_cast<size_t>(at - node_section_names.begin());
+            } else
                 return "unknown section [" + std::string(name) + "]";
             return {};
         },
@@ -1088,11 +1410,22 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
                 return set_mim_device(device, key, value);
             case Section::usb:
                 return set_usb(device, key, value);
+            case Section::usb_node:
+                return set_node_usb(device.mim.node[node], key, value);
+            case Section::touch_hid:
+                return set_touch_hid(device.touch_hid, key, value);
+            case Section::clone:
+                return set_clone_key(*device.clone, key, value).empty();
             }
             return false;
         });
     if (!error.empty())
         return error;
+    if (const std::string problem = touch_hid_problem(device.touch_hid); !problem.empty())
+        return "[touch_hid] " + problem;
+    if (device.clone)
+        if (const std::string problem = clone_problem(*device.clone); !problem.empty())
+            return "[clone] " + problem;
     // A gain that is only what the pointer speed and the density give (as an
     // earlier version wrote it from adb) is not a value of its own: it would stay behind
     // when the pointer speed is changed.
@@ -1123,26 +1456,25 @@ std::string format_device(const DeviceConfig& d) {
     out.put("monitor", d.monitor);
     out.put("beside", d.beside);
     out.put("side", side_name(d.side));
-    if (!(d.segment_start == centred_start))
-        out.put("start", std::to_string(d.segment_start));
-    if (!(d.segment_length < 0))
-        out.put("length", std::to_string(d.segment_length));
+    if (d.start_ratio || !(d.segment_start == centred_start))
+        out.put("start", edge_value_text(d.segment_start, centred_start, d.start_ratio));
+    if (d.length_ratio || !(d.segment_length < 0))
+        out.put("length", edge_value_text(d.segment_length, -1, d.length_ratio));
     char margin[32];
     std::snprintf(margin, sizeof margin, "%.6g%%", d.corner_margin * 100.0);
     out.put("corner_margin", margin);
-    if (!(d.monitor_diagonal_inch <= 0.0))
-        out.put("monitor_diagonal_inch", number(d.monitor_diagonal_inch));
     if (!(d.rotation < 0))
         out.put("rotation", std::to_string(d.rotation));
-    out.put("turn_input", std::to_string(d.mount_rotation));
 
     out.section("detected");
     if (!(d.width <= 0))
         out.put("width", std::to_string(d.width));
     if (!(d.height <= 0))
         out.put("height", std::to_string(d.height));
-    if (!(d.diagonal_inch <= 0.0))
-        out.put("diagonal_inch", number(d.diagonal_inch));
+    if (!(d.real_width <= 0))
+        out.put("real_width", std::to_string(d.real_width));
+    if (!(d.real_height <= 0))
+        out.put("real_height", std::to_string(d.real_height));
     if (!(d.gain <= 0.0))
         out.put("gain", number(d.gain));
     if (d.accel != AccelSetting::automatic)
@@ -1212,6 +1544,18 @@ std::string format_device(const DeviceConfig& d) {
         if (t.button)
             out.put("tap_button", std::to_string(*t.button));
     }
+    if (!(d.touch_hid == TouchHid())) {
+        out.section("touch_hid");
+        for (const TouchHidKey& each : touch_hid_keys) {
+            if (const std::optional<uint32_t>& v = d.touch_hid.*each.member)
+                out.put(each.name, std::to_string(*v));
+        }
+    }
+    if (d.clone) {
+        out.section("clone");
+        for (const auto& [key, value] : clone_lines(*d.clone))
+            out.put(key, value);
+    }
     if (d.adb_proxy || d.adb_port != 0) {
         out.section("adb");
         if (d.adb_proxy)
@@ -1233,9 +1577,31 @@ std::string format_device(const DeviceConfig& d) {
         out.put("serial_from_chip_id", yes_no(d.mim.serial_from_chip_id));
         out.put("bcd_device", usb_id_text(d.mim.bcd_device));
         out.put("max_power_ma", d.mim.max_power_ma != 0 ? std::to_string(d.mim.max_power_ma) : "");
+        out.put("language_id", usb_id_text(d.mim.language_id));
         out.put("self_powered", yes_no(d.mim.self_powered));
         out.put("remote_wakeup", yes_no(d.mim.remote_wakeup));
         out.put("configuration", d.mim.configuration);
+        // A Node's interface is written only with what is set.
+        for (size_t n = 0; n < usb_nodes; ++n) {
+            const NodeUsb& u = d.mim.node[n];
+            if (u == NodeUsb())
+                continue;
+            out.section(node_section_names[n]);
+            const auto put_number = [&](const char* key, const std::optional<uint32_t>& v) {
+                if (v)
+                    out.put(key, std::to_string(*v));
+            };
+            put_number("interface_number", u.interface_number);
+            if (!u.interface_name.empty())
+                out.put("interface_name", u.interface_name);
+            put_number("poll_interval_ms", u.poll_interval_ms);
+            put_number("ep_in_size", u.ep_in_size);
+            put_number("ep_out_size", u.ep_out_size);
+            if (u.bcd_hid)
+                out.put("bcd_hid", usb_id_text(static_cast<uint16_t>(*u.bcd_hid)));
+            put_number("country_code", u.country_code);
+            put_number("report_id", u.report_id);
+        }
     }
     return out.text;
 }
@@ -1307,6 +1673,14 @@ std::string validate_config(const Config& config) {
                 return label_of(devices[a]) + " and " + label_of(devices[b]) +
                        " use the same adb port";
         }
+    }
+
+    for (const DeviceConfig& device : devices) {
+        if (const std::string problem = touch_hid_problem(device.touch_hid); !problem.empty())
+            return label_of(device) + ": " + problem;
+        if (device.clone)
+            if (const std::string problem = clone_problem(*device.clone); !problem.empty())
+                return label_of(device) + ": " + problem;
     }
 
     // A board is known by its serial port, and serves no ADB.

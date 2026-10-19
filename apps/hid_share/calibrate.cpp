@@ -2,6 +2,7 @@
 #include "calibrate.hpp"
 
 #include "hid_share/config.hpp"
+#include "hid_share/probe.hpp"
 #include "control.hpp"
 #include "paths.hpp"
 #include "store.hpp"
@@ -89,25 +90,31 @@ int measure_axis(const std::string& target, const char* axis_name, RawTerminal& 
         return -1;
     }
 
-    int count = 0;
-    auto last_press = std::chrono::steady_clock::now();
-    int consecutive_count = 0;
+    const bool across = std::strcmp(axis_name, "Horizontal (Width)") == 0;
+    ProbeAxis axis;
+    // One move along the axis; false, with the reason printed, when it failed.
+    const auto move = [&](const int counts) {
+        const std::string by = std::to_string(counts);
+        const std::string cmd = "probe " + target + " move " + (across ? by + " 0" : "0 " + by);
+        if (!control_request(cmd, answer) || answer.rfind("error=", 0) == 0) {
+            std::fprintf(stderr, "\nFailed to move cursor: %s\n", answer.c_str());
+            return false;
+        }
+        return true;
+    };
 
     std::printf("\n  Measuring %s:\n", axis_name);
-    std::printf("  - Tap SPACE for single count (1 count)\n");
-    std::printf("  - Hold SPACE to move smoothly\n");
-    std::printf("  - BACKSPACE to step back\n");
-    std::printf("  - ENTER when cursor hits the edge\n");
+    std::printf("  - SPACE or 1: press 1 count,  2: press 10,  3: press 100\n");
+    std::printf("  - ENTER: a press of 1 moved nothing, so the cursor is at the edge\n");
     std::printf("  - Q to abort\n");
-    std::printf("  * Tip: Pushing slightly past the edge (+5 to +10 extra counts) is recommended\n");
-    std::printf("         so the cursor reliably reaches the far edge to tap buttons.\n\n");
+    std::printf("  * Press 100 until the next press would pass the edge, then 10, then 1. The\n");
+    std::printf("    press of 1 that moves nothing is not counted. If a press passed the edge,\n");
+    std::printf("    quit and measure again.\n\n");
 
     while (true) {
-        int key = term.read_key(20);
-        if (key < 0) {
-            consecutive_count = 0;
+        const int key = term.read_key(20);
+        if (key < 0)
             continue;
-        }
 
         if (key == 'q' || key == 'Q' || key == 27) { // 27 = ESC
             std::puts("\n  Calibration aborted by user.");
@@ -115,61 +122,25 @@ int measure_axis(const std::string& target, const char* axis_name, RawTerminal& 
         }
 
         if (key == '\n' || key == '\r') {
-            std::puts("\n");
-            break;
+            const int travel = axis.finish(1);
+            if (travel > 0) {
+                std::puts("\n");
+                return travel;
+            }
+            std::puts("\n  The last press must be a 1 that moved nothing.");
+            continue;
         }
 
-        if (key == ' ') {
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed =
-                std::chrono::duration_cast<std::chrono::milliseconds>(now - last_press).count();
-            last_press = now;
-
-            int step = 1;
-            if (elapsed < 120) {
-                consecutive_count++;
-                if (consecutive_count > 15)
-                    step = 10;
-                else if (consecutive_count > 5)
-                    step = 5;
-                else
-                    step = 2;
-            } else {
-                consecutive_count = 0;
-                step = 1;
-            }
-
-            count += step;
-
-            std::string cmd;
-            if (std::strcmp(axis_name, "Horizontal (Width)") == 0)
-                cmd = "probe " + target + " move " + std::to_string(step) + " 0";
-            else
-                cmd = "probe " + target + " move 0 " + std::to_string(step);
-
-            if (!control_request(cmd, answer) || answer.rfind("error=", 0) == 0) {
-                std::fprintf(stderr, "\nFailed to move cursor: %s\n", answer.c_str());
+        const int step = (key == ' ' || key == '1') ? 1 : key == '2' ? 10 : key == '3' ? 100 : 0;
+        if (step > 0) {
+            if (!move(step))
                 return -1;
-            }
-        } else if (key == 127 || key == 8) { // Backspace
-            if (count > 0) {
-                int step = (count >= 5) ? 5 : 1;
-                count -= step;
-                std::string cmd;
-                if (std::strcmp(axis_name, "Horizontal (Width)") == 0)
-                    cmd = "probe " + target + " move -" + std::to_string(step) + " 0";
-                else
-                    cmd = "probe " + target + " move 0 -" + std::to_string(step);
-
-                static_cast<void>(control_request(cmd, answer));
-            }
+            axis.press(step);
         }
 
-        std::printf("\r  -> Accumulated: %5d counts  ", count);
+        std::printf("\r  -> Accumulated: %5d counts  ", axis.total());
         std::fflush(stdout);
     }
-
-    return count;
 }
 
 } // namespace
@@ -252,23 +223,41 @@ int run_calibrate(int argc, char** argv) {
 
     term.restore();
 
-    if (dev.rotation < 0)
-        dev.rotation = 0;
-
-    const bool turned = dev.rotation == 90 || dev.rotation == 270;
-    const int comp_w = (turned ? count_y : count_x) + 1;
-    const int comp_h = (turned ? count_x : count_y) + 1;
+    const int comp_w = count_x + 1;
+    const int comp_h = count_y + 1;
 
     std::puts("======================================================================");
     std::puts(" Calibration Summary");
     std::printf("   Target: %s\n", dev.name.c_str());
-    std::printf("   Measured Counts: X = %d,  Y = %d\n", count_x, count_y);
-    std::printf("   Screen Rotation: %d°\n", dev.rotation);
-    std::printf("   Calculated Size: Width = %d, Height = %d (Gain = 1.0, Accel = off)\n", comp_w,
-                comp_h);
+    std::printf("   Measured Counts: X = %d,  Y = %d (Accel = off)\n", count_x, count_y);
     std::puts("======================================================================");
 
-    std::printf("Save these dimensions to device settings? [Y/n]: ");
+    // The real size turns the counts into a gain; without it a count is the unit.
+    int real_w = dev.real_width;
+    int real_h = dev.real_height;
+    std::printf("Real width of that screen in pixels as it is shown [%d, empty keeps it]: ", real_w);
+    std::fflush(stdout);
+    char text[32] = {0};
+    if (std::fgets(text, sizeof(text), stdin) == nullptr)
+        return 0;
+    if (text[0] != '\n')
+        real_w = std::atoi(text);
+    std::printf("Real height in pixels [%d, empty keeps it]: ", real_h);
+    std::fflush(stdout);
+    if (std::fgets(text, sizeof(text), stdin) == nullptr)
+        return 0;
+    if (text[0] != '\n')
+        real_h = std::atoi(text);
+    const bool real = real_w >= 2 && real_h >= 2;
+    if (real) {
+        std::printf("   Gain = %.4g px per count (across alone %.4g, down alone %.4g)\n",
+                    (real_w - 1.0 + real_h - 1.0) / (count_x + count_y),
+                    (real_w - 1.0) / count_x, (real_h - 1.0) / count_y);
+    } else {
+        std::puts("   No real size: the gain is 1, the sizes stay counts and touch cannot be used.");
+    }
+
+    std::printf("Save these to device settings? [Y/n]: ");
     std::fflush(stdout);
 
     char choice[16] = {0};
@@ -278,17 +267,17 @@ int run_calibrate(int argc, char** argv) {
     if (choice[0] == '\n' || choice[0] == 'y' || choice[0] == 'Y') {
         dev.width = comp_w;
         dev.height = comp_h;
-        dev.gain = 1.0;
+        dev.real_width = real ? real_w : 0;
+        dev.real_height = real ? real_h : 0;
+        dev.gain = real ? 0.0 : 1.0;
         dev.accel = AccelSetting::off;
-        if (dev.diagonal_inch <= 0.0)
-            dev.diagonal_inch = 6.5;
         if (!save_store(current)) {
             std::fputs("Error: failed to save settings file.\n", stderr);
             return 1;
         }
         std::string reload_ans;
         static_cast<void>(control_request("reload", reload_ans));
-        std::puts("Successfully saved dimensions and reloaded daemon!");
+        std::puts("Successfully saved and reloaded daemon!");
     } else {
         std::puts("Cancelled. Settings were not modified.");
     }

@@ -22,10 +22,27 @@ struct App;
 // here: its ids and everything else it announces.
 void draw_copy_mouse(App& app, hids::DeviceConfig& device);
 
-// True when every step of the device is done.
+// The board presents a plugged-in device as its own: pick one, read it again, remove it,
+// and what the board will show of it.
+void draw_clone(App& app, hids::DeviceConfig& device);
+
+// True when the device is connected: every step of its Setup is done.
 [[nodiscard]] bool setup_complete(const App& app, const hids::DeviceConfig& device);
 
+// Whether something is still to be set for the device (its link, a board's
+// identity, the screen's size and gain). Whether it is plugged in does not
+// count: that is shown by its mark, and Connect is on the Tools tab.
+[[nodiscard]] bool needs_setup(const hids::DeviceConfig& device);
+
+// The state a device's mark in the list shows: the daemon's, except that a
+// device that was asked for but could not be opened, or a board that lacks
+// what it cannot be opened without, is an "error" ([!]).
+[[nodiscard]] std::string mark_state(const App& app, const hids::DeviceConfig& device);
 void draw_setup(App& app, hids::DeviceConfig& device);
+
+// The phones and boards the last search found that have no file yet, each with
+// a button that adds it and opens its Setup.
+void draw_new_devices(App& app);
 
 // The page of the Computer when no device is set up yet: what to do first.
 void draw_getting_started(App& app);

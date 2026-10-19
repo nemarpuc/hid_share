@@ -2,6 +2,72 @@
 
 ## 0.4.0
 
+- Clone mode (a board only): the Connection tab can present a USB device plugged into this
+  computer (a keyboard, a mouse) as the board's own. Its ids, strings, power values and every
+  HID interface (number, polling interval, endpoint sizes, boot protocol, `bcdHID`, report
+  descriptor with its Report IDs) are read from sysfs as they are and kept in `[clone]` of the
+  device file. The mouse, keyboard and media switches cut the parts that are off out of the
+  descriptors the other computer sees, and the input goes into the device's own reports
+  (a 6-key array or an NKRO bitmap, the Consumer and mouse collections, a battery level when
+  the device has one). Only the looks are copied: vendor interfaces are presented but silent,
+  a Feature report above 32 bytes is declared but cannot be answered, an endpoint
+  size is kept as it is (any 1 to 64 bytes; larger becomes 64), and touch mode is not available. The status gains
+  `clone` and `clone_notes`.
+- Touch mode is a beta: `[daemon] beta = true` shows a Beta tab (touch mode, the real size,
+  rotation, tap and swipe settings, the descriptor values) in the settings window and
+  takes them off the other tabs. The setting only hides the tab; a device with touch on
+  keeps it. The wizard no longer asks for the real size (type it in the Beta tab).
+- The settings window's tabs have plainer names: Connection, Measure, Layout, Inputs,
+  Shortcuts, Pointer.
+- The Measure tab says when the screen was probably turned after it was measured (the real
+  size fits the travel only when swapped) and offers to swap the travel.
+- The calibration wizard measures each edge by single steps: press 100, 10 and 1 toward
+  the far edge without passing it; the press of 1 that moved nothing is not counted, so
+  the count before it is exact to one count (`ProbeAxis`). There is no undo: a press
+  that passed the edge means measuring again. The same in the settings window and in `hid_share calibrate`,
+  for every link.
+- A board's `[usb]` values have ordinary defaults: the pid.codes test id 1209:0001
+  (for in-house testing only), `Generic` and `USB Input Device`. The two ids go together;
+  one given alone is not completed and the board is not opened. The device status shows
+  `usb_test_id`. `language_id` is new.
+- A board's Nodes have their own USB interface values: `[usb.mouse]`, `[usb.keyboard]`,
+  `[usb.media]`, `[usb.touch]` (interface number, name, polling interval, endpoint sizes,
+  HID release, country code, Report ID). The numbers are checked against
+  the board's limits; a change makes the board re-attach once. Nodes with the same
+  `interface_number` share one HID interface and then each needs its own `report_id`.
+- `[touch_hid]` sets the touchscreen's descriptor values (contacts, contact id and count,
+  coordinate width, pressure, width, height, azimuth, scan time) for a board and a phone.
+  Left out, the descriptors are what they were.
+
+- The real size of the other screen is typed (`[detected] real_width`, `real_height`).
+  With it and the travel the wizard measured in counts (`width`, `height`, kept as they
+  were), the gain is calculated: the pixels across both edges over the counts across
+  both, so it no longer has to be typed or taken as 1. The wizard's last step has the
+  rows, shows the gain and warns when the two axes disagree by more than 1%; a typed
+  `gain` still wins, and the Screen tab offers to drop it when it differs from the
+  calculated one. With the real size given, the daemon works in real pixels.
+- The touchscreen is built from the real size (turned by `rotation`), no longer from the
+  measured counts, so a tap lands on the pixel the cursor is on and measuring again no
+  longer re-attaches the board. Touch needs `real_width`, `real_height` and `rotation`;
+  a file that has touch on without the real size reports them as missing. A **Test tap**
+  button (`probe DEVICE tap X Y`) taps a quarter in from the top left corner to check the
+  rotation.
+- The wizard no longer says to push past the edge: every count pressed is counted, so the
+  extra made the screen look bigger than it is.
+- The HID tab holds every touch setting of the device, each following the computer unless
+  set, the swipe settings included (they were hidden while the wheel swipe was off).
+- The device page has fewer tabs: Setup (only while something is left to set, or while it
+  is the open tab), Device (a board's USB values are under it), Screen, Placement, HID,
+  Keys, Motion, Tools and Status (with the Reports). Long explanations are folded.
+
+- Rotation is gone from the mouse: the wizard measures the screen as it is shown, so
+  the screen's rotation is no longer asked for or needed, and `turn_input` is read and
+  dropped. Only touch mode keeps `rotation`, with a note and a **Turn touch 90 degrees**
+  button in the HID tab, because touch positions do not follow the screen's rotation.
+- Rotation is gone from the mouse: the wizard measures the screen as it is shown, so
+  the screen's rotation is no longer asked for or needed, and `turn_input` is read and
+  dropped. Only touch mode keeps `rotation`, with a note and a **Turn touch 90 degrees**
+  button in the HID tab, because touch positions do not follow the screen's rotation.
 - Renamed from aoahid_share to hid_share: the include directory, namespace,
   programs, environment variables and repository.
 - A MIM board (libmimhid) is now the main way to reach a target machine, of any
@@ -14,14 +80,39 @@
   a constant (500 ms), not a setting; an old `[mim] timeout_ms` line is read and dropped.
   See `docs/CONFIG.md`.
 - One search: the refresh icon (`hid_share rescan`) looks for phones and boards. It
-  asks every serial port whether a board answers, so only the search the user asks for
-  does it; ports in use are passed over. The separate Find buttons and `find_boards`
-  are gone.
-- A **Setup** tab, first for every device, lists what is left before it works, in
-  order, with the reason and the next action at each step (for a board: found, what
-  the other computer sees, taken by the other computer, its screen, where it sits;
-  for a phone the same without the second). The Computer page says how to start
-  while there is no device.
+  asks every serial port whether a board answers; so does the daemon's first scan as
+  it starts, and no other (not the ones after a failure, `reload` or `connect`). Ports in
+  use are passed over. The separate Find buttons and `find_boards` are gone.
+- A **Setup** tab, first for every device, lists what is left, in order, with the reason
+  and the next action at each step: for a board, found, what the other computer sees,
+  taken by the other computer, the other screen, where it sits; for a phone the same
+  without the second. A device that is not fully set up opens on it when it is chosen in
+  the list, and so does a device that was just added. One click copies a board's name and
+  ids from a mouse plugged in here; one button saves what was edited and connects; the
+  calibration wizard starts from the screen step, saves and applies, and the window moves on to the Placement tab. The Computer page
+  lists what the last search found with a "Set it up" button for each, and says how to
+  start while there is no device.
+- Setup ends with **Try it**: it says which edge of which monitor to push the cursor
+  through, has a row for the optional switch key (there is none unless it is set), and a
+  button that sends the input to the device for five seconds and takes it back by itself
+  (a backend that only crosses at the screen edge says so instead). Above the steps it
+  shows when this computer's input could not be set up (the daemon's `capture_error`) or
+  the desktop is still asking for permission, and under "Where it sits" the daemon's
+  reason when the device is not placed.
+- **The diagonal is gone, and Placement takes ratios.** `length` and `start` accept a percent
+  of the edge the device sits on (`50%`, `25%`) as well as pixels; a ratio fits any monitor
+  or device, and is what dragging or resizing a device in the picture now writes. Without a
+  `length`, a device covers the whole edge. The physical size of the screen
+  (`diagonal_inch`) and of a monitor (`monitor_diagonal_inch`) no longer size anything: old
+  lines are read and dropped, the daemon no longer refuses a device for a monitor that
+  reports no size, and the status key `density` is gone. The settings window and the
+  wizard no longer ask for a diagonal, and `hid_share calibrate` no longer sets one.
+- The Screen tab is reorganised: measure it (the wizard), what was measured, about the
+  other screen (rotation, diagonal, pointer acceleration), and the rest under Advanced.
+  It says what the width and height are: how far the cursor can travel, in mouse counts
+  when measured (gain 1), not the real resolution.
+- A board that was asked for but cannot be opened (it lacks what it cannot be opened
+  without, or opening failed) now shows `[!]` in the list, as a phone does.
 - **Fill from ADB is gone** (the `fill` command, the button, `detected.read_at`, the
   status keys `fill`, `reading` and `files_version`): reading a phone through adb did
   not work reliably. Screen size and gain are measured with the calibration wizard or

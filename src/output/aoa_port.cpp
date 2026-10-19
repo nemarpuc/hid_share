@@ -134,24 +134,38 @@ aoahid_result create_toggle(aoahid_spec** spec) noexcept {
     return aoahid_spec_create_toggle(&options, spec);
 }
 
-// Smallest width that represents 0..maximum.
-uint32_t bits_for(const int64_t maximum) noexcept {
-    uint32_t bits = 1;
-    while (bits < 32 && (int64_t{1} << bits) - 1 < maximum)
-        ++bits;
-    return bits;
+// Declares an optional field when its maximum is given.
+void optional_field(const std::optional<uint32_t>& maximum, const std::optional<uint32_t>& bits,
+                    uint32_t& enable, aoahid_integer_field& out) noexcept {
+    if (!maximum)
+        return;
+    enable = 1U;
+    out = field(0, static_cast<int32_t>(*maximum), bits.value_or(bits_to_hold(*maximum)));
 }
 
-aoahid_result create_touchscreen(const Size size, aoahid_spec** spec) noexcept {
+aoahid_result create_touchscreen(const Size size, const TouchHid& hid,
+                                 aoahid_spec** spec) noexcept {
     aoahid_touchscreen_options options{};
     options.struct_size = static_cast<uint32_t>(sizeof(options));
     // Contact 0 is the click, contact 1 the scroll; one report carries both.
-    options.maximum_contacts = 2U;
-    options.contacts_per_report = 2U;
-    options.contact_id = field(0, 15, 4);
-    options.x = field(0, size.w - 1, bits_for(size.w - 1));
-    options.y = field(0, size.h - 1, bits_for(size.h - 1));
-    options.contact_count = field(0, 2, 2);
+    options.maximum_contacts = hid.maximum_contacts.value_or(2U);
+    options.contacts_per_report = hid.contacts_per_report.value_or(2U);
+    options.contact_id = field(0, static_cast<int32_t>(hid.contact_id_max.value_or(15U)),
+                               hid.contact_id_bits.value_or(4U));
+    const auto coordinate_bits = [&](const int32_t extent) {
+        return hid.coordinate_bits.value_or(bits_to_hold(extent - 1));
+    };
+    options.x = field(0, size.w - 1, coordinate_bits(size.w));
+    options.y = field(0, size.h - 1, coordinate_bits(size.h));
+    options.contact_count = field(0, static_cast<int32_t>(hid.contact_count_max.value_or(2U)),
+                                  hid.contact_count_bits.value_or(2U));
+    optional_field(hid.pressure_max, hid.pressure_bits, options.enable_pressure, options.pressure);
+    optional_field(hid.width_max, hid.width_bits, options.enable_width, options.width);
+    optional_field(hid.height_max, hid.height_bits, options.enable_height, options.height);
+    optional_field(hid.azimuth_max, hid.azimuth_bits, options.enable_azimuth, options.azimuth);
+    optional_field(hid.scan_time_max, hid.scan_time_bits, options.enable_scan_time,
+                   options.scan_time);
+    options.scan_time_unit_100us = hid.scan_time_unit_100us.value_or(0U);
     return aoahid_spec_create_touchscreen(&options, spec);
 }
 
@@ -262,17 +276,20 @@ class AoaPort final : public Port {
             result = sync(node_media, options.media, create_toggle);
         // A size that changed means a new Spec: the old Node goes first.
         if (result == AOAHID_OK && nodes_[node_touch] != nullptr && options.touch &&
-            (touch_size_.w != options.touch_size.w || touch_size_.h != options.touch_size.h)) {
+            (touch_size_.w != options.touch_size.w || touch_size_.h != options.touch_size.h ||
+             !(touch_hid_ == options.touch_hid))) {
             result = aoahid_node_close(nodes_[node_touch]);
             if (result == AOAHID_OK)
                 nodes_[node_touch] = nullptr;
         }
         if (result == AOAHID_OK) {
             result = sync(node_touch, options.touch, [&](aoahid_spec** spec) {
-                return create_touchscreen(options.touch_size, spec);
+                return create_touchscreen(options.touch_size, options.touch_hid, spec);
             });
-            if (result == AOAHID_OK)
+            if (result == AOAHID_OK) {
                 touch_size_ = options.touch_size;
+                touch_hid_ = options.touch_hid;
+            }
         }
         return ok(result);
     }
@@ -330,6 +347,7 @@ class AoaPort final : public Port {
     std::array<aoahid_node*, node_kinds> nodes_{};
     // The size the touch Node was built for.
     Size touch_size_{};
+    TouchHid touch_hid_;
     aoahid_adb_proxy_context* proxy_{};
     std::string error_;
 };

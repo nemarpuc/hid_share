@@ -50,7 +50,7 @@ your mouse/keyboard ─▶ hid_share_daemon ─┬▶ serial ─▶ board (MIM) 
   where it must be: it pushes the cursor into a corner once (the machine stops
   it there), then counts every movement it sends. [docs/MATH.md](docs/MATH.md)
   has the arithmetic. For a machine that is not Android, turn its pointer
-  acceleration off and give or measure the gain (the Screen tab's wizard);
+  acceleration off and give or measure the gain (the Measure tab's wizard);
   nothing is read from it.
 - When the tracked position reaches the shared edge and you keep pushing, the
   input comes back to the computer at the matching height.
@@ -66,30 +66,42 @@ build/out/hid_share_daemon &
 build/out/hid_share status
 ```
 
-The daemon scans when it starts but opens no device by itself: it only
-lists the ones that have a file, and the phones that are plugged in.
+The daemon scans when it starts, for phones and for boards, but opens no device by
+itself: it only lists the ones that have a file, and what it found.
 
 **With a board (MIM).** Flash the board and wire its serial port as
 [libmimhid's quick start](https://github.com/nemarpuc/libmimhid/blob/main/docs/QUICKSTART.md)
-says (libmimhid 1.0.1 firmware), and give your user access to the serial port.
+says (libmimhid 1.0.2 firmware), and give your user access to the serial port.
 Then, in the settings window (`hid_share_gui`):
 
-1. Start the daemon (the button at the bottom left) and press the **refresh icon**
-   above the device list (or `hid_share rescan`). It looks for phones and sends a
-   message to every serial port that could be a board, which is why it is done only
-   when you ask; ports in use are passed over. It also measures the fastest
-   serial speed the board's adapter carries. The board appears as `+ ...`.
-2. Press it. The board is added with that speed, and its **Setup** tab opens. The
+1. Start the daemon (the button at the bottom left). As it starts, and again when you
+   press the **refresh icon** above the device list (or `hid_share rescan`), it looks
+   for phones and sends a message to every serial port that could be a board; ports in
+   use are passed over. It also measures the fastest serial speed the board's
+   adapter carries. The board appears as `+ ...`.
+2. Press it (or "Set it up" under Found on the Computer page). The board is added with
+   that speed, and its **Setup** tab opens. The
    Setup tab lists what is left, in order, with the reason and the next action at
    each step:
    - what the other computer sees: the name and ids the board shows as a USB
-     device (copy them from a mouse or touchscreen plugged in here, with the button;
-     none has a default and no maker's name is assumed);
+     device (one click copies them from a mouse or touchscreen plugged in here;
+     left empty they are the test id 1209:0001, "Generic", "USB Input Device"); or
+     present a USB keyboard or mouse plugged in here as the board's own, read whole
+     (ids, interfaces, report descriptors) with "Clone a plugged-in device", for your own
+     testing only (its looks are copied, not its software);
    - the other computer has taken it: plug the board's USB cable into that
-     computer and press **Connect**;
-   - the other screen: its size and how far a count moves the cursor, measured by
-     the wizard on the tab;
-   - where it sits next to your monitors.
+     computer and press **Connect** (it saves what you edited first);
+   - the other screen: press **Start Calibration Wizard** and step the cursor to the right
+     edge and the bottom edge of that screen, finishing with single counts. A mouse never
+     tells the computer how big the other screen is, so it is measured once, in mouse
+     counts. With the screen's real size (a beta setting, in the Beta tab) the counts turn
+     into the gain, and the touchscreen is built from it;
+   - where it sits: the window opens the Layout tab, where you pick the monitor and
+     the side, or drag the device into place;
+   - try it: the last step names the edge to push the cursor through, and has a
+     button that sends the input to the device for five seconds to check that it
+     works. It also shows why, when this computer's input could not be set up or the
+     device could not be placed.
 3. Push the cursor through the edge.
 
 A board that has a file is opened on the port its file names, without searching.
@@ -137,7 +149,7 @@ window.
 | The device's `switch` key | to the device, and back when it has the input |
 | `hid_share release` | returns to the computer, from a terminal |
 
-Shortcuts are set per device, in its Keys tab, and none is set to start with:
+Shortcuts are set per device, in its Shortcuts tab, and none is set to start with:
 `switch` takes the input to the device and back, `lock` keeps it there (for a
 game that takes the mouse), and each media key can have one.
 
@@ -157,7 +169,7 @@ input stack are not in that number and cannot be removed from here.
 ## adb keeps working (phones)
 
 Boards have no ADB interface; this is for phones (`link = aoa`). While the daemon holds the phone over USB, `adb` cannot open it itself. Switch
-a device's **ADB proxy** on (its Device tab, or `proxy = true` in its
+a device's **ADB proxy** on (its Connection tab, or `proxy = true` in its
 file) and the daemon serves the phone's ADB interface on `127.0.0.1:<port>`
 (6555 for the first device, through the vendored
 [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy)); you then
@@ -166,8 +178,8 @@ run `adb connect 127.0.0.1:6555` yourself and the phone shows up in
 the daemon uses adb on its own: no `adb connect`, no reading of the phone, no
 change of its settings.
 
-The size, rotation, diagonal and pointer settings of a screen are typed or
-measured with the wizard (the Setup and Screen tabs); a value that is not set is
+The size and pointer settings of a screen are typed or
+measured with the wizard (the Setup and Measure tabs); a value that is not set is
 said to be missing, never guessed. The only way the daemon touches adb's server is to stop it
 (`kill_server`, in `[adb]`): before each scan that was asked for (also the one at start), when it holds
 the ADB interface that a proxy is to take, and once more on exit if a proxy was
@@ -203,13 +215,14 @@ link = aoa
 [placement]
 monitor = HDMI-A-2     ; which monitor the device sits next to (or beside = another serial)
 side = right           ; left | right | top | bottom
-rotation = 0           ; set by hand
+length = 50%           ; how much of that edge it covers: pixels, or a percent of the edge
+rotation = 0           ; touch mode only: turn it until taps land right
 
 [detected]
-width = 1600
-height = 2560
-diagonal_inch = 11
-gain = 2.169
+width = 741           ; the travel the wizard measured, in counts
+height = 1181
+real_width = 1600     ; the real size in pixels; with it the gain follows (leave gain out)
+real_height = 2560
 accel = off
 
 [adb]
@@ -226,8 +239,8 @@ link = mim
 [mim]
 port = /dev/ttyUSB0    ; or a /dev/serial/by-id/ path, which survives replugging
 
-[usb]                  ; what the board announces; no default for any of these
-vendor_id = 0x....
+[usb]                  ; what the board announces; left out: the test id 1209:0001, "Generic", "USB Input Device"
+vendor_id = 0x....     ; give both ids or neither
 product_id = 0x....
 manufacturer = ...
 product = ...
@@ -283,7 +296,7 @@ shares a screen edge with your desktop's own edge features:
 
 ## Building
 
-Requires CMake 3.22, a C++20 compiler, libaoahid 1.0 or newer and libmimhid 1.0 or newer. On Linux each
+Requires CMake 3.22, a C++20 compiler, libaoahid 1.0 or newer and libmimhid 1.0.2 or newer. On Linux each
 backend is built when its libraries are found:
 
 | Backend | Packages (Debian names) |

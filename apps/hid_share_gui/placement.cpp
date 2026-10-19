@@ -100,6 +100,7 @@ bool shown_above(const ConfigKey& key) {
 void draw_placement_basics(App& app, DeviceConfig& device) {
     draw_beside(app, device);
     draw_side(app, device);
+    field(app, key_of("length"), &device, "Covers (% of the edge)");
 }
 
 void draw_placement(App& app, DeviceConfig& device) {
@@ -107,20 +108,23 @@ void draw_placement(App& app, DeviceConfig& device) {
     ImGui::Spacing();
     draw_side(app, device);
     draw_beside(app, device);
-    field(app, key_of("start"), &device);
-    field(app, key_of("length"), &device);
+    look::dim("How much of the edge the device covers, and where it starts along it: a percent\n"
+              "of the edge (50%) fits any monitor or device; pixels also work. Empty covers all of\n"
+              "it, and centres it.");
+    field(app, key_of("length"), &device, "Covers (% of the edge)");
+    field(app, key_of("start"), &device, "Starts at (% of the edge)");
     // The rest of the placement, in the order of the table.
     for (const ConfigKey& key : config_keys()) {
         if (std::string(key.group) == "Placement" && key.scope == KeyScope::device &&
             !shown_above(key))
             field(app, key, &device);
     }
-    if (ImGui::Button("Centre it on the edge")) {
+    if (ImGui::Button("Cover the whole edge")) {
         clear_field(app, key_of("start"), &device);
         clear_field(app, key_of("length"), &device);
     }
     ImGui::SameLine();
-    look::dim("Start and length empty: the middle of the edge, as long as the real sizes say.");
+    look::dim("Both empty: the whole edge.");
 }
 
 } // namespace gui

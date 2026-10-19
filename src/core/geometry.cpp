@@ -60,77 +60,37 @@ std::vector<Span> outer_spans(const std::vector<Monitor>& monitors, const size_t
     return result;
 }
 
-Size view_size(const Size natural, const int rotation, const int mount) noexcept {
-    Size size = natural;
-    if (rotation == 90 || rotation == 270)
-        std::swap(size.w, size.h);
-    if (mount == 90 || mount == 270)
-        std::swap(size.w, size.h);
-    return size;
+Size touch_raw_size(const Size view, const int rotation) noexcept {
+    return rotation == 90 || rotation == 270 ? Size{view.h, view.w} : view;
 }
 
-Delta to_device_delta(const int mount, const Delta view) noexcept {
-    switch (mount) {
-    case 90:
-        return {view.y, -view.x};
-    case 180:
-        return {-view.x, -view.y};
-    case 270:
-        return {-view.y, view.x};
-    default:
-        return view;
-    }
-}
-
-TouchPoint to_touch_point(const Size natural, const int rotation, const int mount,
-                          const double view_x, const double view_y) noexcept {
-    const Size view = view_size(natural, rotation, mount);
-    // View space to display space: undo the mount.
-    double dx = view_x;
-    double dy = view_y;
-    switch (mount) {
-    case 90:
-        dx = view_y;
-        dy = view.w - 1.0 - view_x;
-        break;
-    case 180:
-        dx = view.w - 1.0 - view_x;
-        dy = view.h - 1.0 - view_y;
-        break;
-    case 270:
-        dx = view.h - 1.0 - view_y;
-        dy = view_x;
-        break;
-    default:
-        break;
-    }
-    // Display space to the natural orientation: undo the display rotation.
-    double rx = dx;
-    double ry = dy;
+TouchPoint to_touch_point(const Size view, const Size raw, const int rotation, const double view_x,
+                          const double view_y) noexcept {
+    // The position as a fraction of the display, then turned into the raw axes.
+    const double u = view.w > 1 ? view_x / (view.w - 1) : 0.0;
+    const double v = view.h > 1 ? view_y / (view.h - 1) : 0.0;
+    double ru = u;
+    double rv = v;
     switch (rotation) {
     case 90:
-        rx = natural.w - 1.0 - dy;
-        ry = dx;
+        ru = 1.0 - v;
+        rv = u;
         break;
     case 180:
-        rx = natural.w - 1.0 - dx;
-        ry = natural.h - 1.0 - dy;
+        ru = 1.0 - u;
+        rv = 1.0 - v;
         break;
     case 270:
-        rx = dy;
-        ry = natural.h - 1.0 - dx;
+        ru = v;
+        rv = 1.0 - u;
         break;
     default:
         break;
     }
-    return {static_cast<int>(std::clamp(std::lround(rx), 0L, static_cast<long>(natural.w) - 1)),
-            static_cast<int>(std::clamp(std::lround(ry), 0L, static_cast<long>(natural.h) - 1))};
-}
-
-double monitor_density(const Monitor& monitor, const bool along_x) noexcept {
-    const double mm = along_x ? monitor.width_mm : monitor.height_mm;
-    const int pixels = along_x ? monitor.rect.w : monitor.rect.h;
-    return mm > 0.0 ? pixels / mm : 0.0;
+    const long x = std::lround(ru * (raw.w - 1));
+    const long y = std::lround(rv * (raw.h - 1));
+    return {static_cast<int>(std::clamp(x, 0L, static_cast<long>(raw.w) - 1)),
+            static_cast<int>(std::clamp(y, 0L, static_cast<long>(raw.h) - 1))};
 }
 
 double Portal::to_android(const int t) const noexcept {

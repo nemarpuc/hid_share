@@ -3,7 +3,9 @@
 
 #include "hid_share/config.hpp"
 #include "hid_share/geometry.hpp"
+#include "hid_share/probe.hpp"
 #include "mice.hpp"
+#include "tabs.hpp"
 
 #include <imgui.h>
 
@@ -47,17 +49,23 @@ struct App {
     std::map<std::string, std::string> status;
     std::vector<hids::Monitor> monitors;
     std::vector<NewDevice> fresh;
-    // The mice offered for a board's identity, read when the list is opened.
+    // The mice offered for a board's identity, and when they were read.
     std::vector<Mouse> mice;
+    double mice_read_at{-10.0};
+    // The plugged-in devices offered for a board to copy, and when they were read.
+    std::vector<hids::CloneSource> clone_sources;
+    double clone_read_at{-10.0};
     bool daemon_running{};
     double next_poll{};
+    // The input was sent to a device to try it, and when it is taken back.
+    double try_release_at{};
 
     // What is open: the computer's page, or the page of one device, and which
     // part of each page.
     bool computer{true};
     size_t device{};
     int computer_tab{};
-    int device_tab{};
+    int device_tab{static_cast<int>(DeviceTab::device)};
     // Asked once before a device and its file are removed, and before the
     // daemon is stopped.
     std::string forgetting;
@@ -68,7 +76,7 @@ struct App {
     bool failed{};
 
 
-    // The Reports tab: the lines of the device named by reports_serial, the
+    // The Reports part of Status: the lines of the device named by reports_serial, the
     // number of the last one taken, and whether the list is frozen.
     std::deque<std::string> reports;
     std::string reports_serial;
@@ -80,8 +88,15 @@ struct App {
     bool probing{};
     int probe_step{1}; // 1: measuring width, 2: measuring height, 3: completed
     std::string probe_serial;
+    // The travel of each axis in counts, once its step is done.
     int probe_x{};
     int probe_y{};
+    // The presses of the axis being measured, and how far the cursor was moved
+    // down (or right) from the corner to be seen; both are put back after an undo.
+    hids::ProbeAxis probe_axis;
+    int probe_offset{};
+    // The wizard has saved: the window moves on to where the device sits.
+    bool probe_finished{};
 
     // Dragging a device in the picture: where along it the mouse took hold.
     int drag_offset{};
@@ -117,8 +132,5 @@ void edited_directly(App& app, const std::string& serial, const std::string& sec
 
 // layout_view.cpp
 void draw_layout(App& app);
-// The start and length the picture works out for a device, in the pixels of
-// what it sits beside: what an unset one comes to. False if it cannot be placed.
-[[nodiscard]] bool effective_placement(const App& app, size_t device, int& start, int& length);
 
 } // namespace gui

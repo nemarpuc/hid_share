@@ -181,19 +181,19 @@ class X11Capture final : public Capture {
             switch (barrier.side) {
             case Side::left:
                 x1 = x2 = zone.x + 1;
-                directions = XCB_XFIXES_BARRIER_DIRECTIONS_POSITIVE_X;
+                directions = XCB_XFIXES_BARRIER_DIRECTIONS_NEGATIVE_X;
                 break;
             case Side::right:
                 x1 = x2 = zone.x + zone.w - 1;
-                directions = XCB_XFIXES_BARRIER_DIRECTIONS_NEGATIVE_X;
+                directions = XCB_XFIXES_BARRIER_DIRECTIONS_POSITIVE_X;
                 break;
             case Side::top:
                 y1 = y2 = zone.y + 1;
-                directions = XCB_XFIXES_BARRIER_DIRECTIONS_POSITIVE_Y;
+                directions = XCB_XFIXES_BARRIER_DIRECTIONS_NEGATIVE_Y;
                 break;
             case Side::bottom:
                 y1 = y2 = zone.y + zone.h - 1;
-                directions = XCB_XFIXES_BARRIER_DIRECTIONS_NEGATIVE_Y;
+                directions = XCB_XFIXES_BARRIER_DIRECTIONS_POSITIVE_Y;
                 break;
             }
             const xcb_xfixes_barrier_t id = xcb_generate_id(connection_);

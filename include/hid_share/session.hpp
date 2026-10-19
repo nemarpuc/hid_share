@@ -35,8 +35,7 @@ struct SwipePlan {
     bool restart{};
 };
 
-// Receives what has to reach Android. Deltas are already rotated for the
-// mount, so an implementation only forwards them.
+// Receives what has to reach Android; an implementation only forwards it.
 class Sink {
   public:
     virtual ~Sink() = default;
@@ -82,11 +81,10 @@ struct MotionConfig {
     unsigned buttons{5};
 };
 
-// Touchscreen mode: the geometry the conversion needs, and the settings.
 struct TouchSetup {
     bool enabled{};
-    // The device's natural size and Android's display rotation (the mount is
-    // the session's own).
+    // The touchscreen's raw size, and how far the display as shown is turned
+    // from its axes.
     Size natural{};
     int rotation{};
     // The mouse button that becomes a tap.
@@ -127,7 +125,7 @@ class Session {
     // the corner reference. Not valid while remote().
     // Without `has_pc` the display touches no monitor (it sits beside
     // another device) and the portal is not used.
-    void configure(const Portal& portal, Size view, int mount, const MotionConfig& motion,
+    void configure(const Portal& portal, Size view, const MotionConfig& motion,
                    const AccelModel& accel, std::vector<Neighbour> neighbours = {},
                    bool has_pc = true);
 
@@ -204,7 +202,6 @@ class Session {
     Sink& sink_;
     Portal portal_{};
     Size view_{};
-    int mount_{};
     MotionConfig motion_{};
     AccelModel accel_{};
     Tracker tracker_{};

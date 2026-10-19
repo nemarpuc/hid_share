@@ -9,11 +9,34 @@ namespace {
 using S = KeyScope;
 using K = KeyKind;
 
+// The eight rows of one Node's USB interface; `node` is what the help text calls it.
+#define NODE_USB_ROWS(section, node)                                                            \
+    {S::device, section, "interface_number", "Board USB interfaces", K::integer, "0..255", "",  \
+     "", "The interface number of the " node "; empty takes the lowest free one. Nodes with the " \
+     "same number share an interface and each needs its own report_id."},                       \
+    {S::device, section, "interface_name", "Board USB interfaces", K::text,                     \
+     "at most 31 characters", "", "", "The interface string of the " node "; empty: none."},    \
+    {S::device, section, "poll_interval_ms", "Board USB interfaces", K::integer, "1..255",      \
+     "ms", "", "How often the target polls the " node "; empty takes the ordinary interval."},   \
+    {S::device, section, "ep_in_size", "Board USB interfaces", K::integer, "1..64", "B",         \
+     "", "Size of the " node "'s IN endpoint; empty takes the ordinary size."},                 \
+    {S::device, section, "ep_out_size", "Board USB interfaces", K::integer, "0..64",           \
+     "B", "", "Size of the " node "'s OUT endpoint, 0 for none; empty takes the ordinary one."},\
+    {S::device, section, "bcd_hid", "Board USB interfaces", K::text, "0x0001..0xFFFF", "", "",  \
+     "The HID release number of the " node "; empty announces the ordinary one."},              \
+    {S::device, section, "country_code", "Board USB interfaces", K::integer, "0..255", "", "",  \
+     "The country code of the " node "; empty announces 0."},                                   \
+    {S::device, section, "report_id", "Board USB interfaces", K::integer, "1..255", "", "",     \
+     "The Report ID of the " node "; empty: the report has no Report ID. Nodes that share an "   \
+     "interface must all have one, all different."}
+
 constexpr ConfigKey table[] = {
     // config.ini [daemon]
     {S::computer, "daemon", "backend", "General", K::choice,
      "auto|x11|portal|layer_shell|evdev|windows|macos", "", "auto",
      "How input is captured; auto picks the one this desktop can use."},
+    {S::computer, "daemon", "beta", "General", K::boolean, "", "", "false",
+     "Shows the Beta tab (touch mode and its settings). It changes nothing else."},
 
     // [mouse] and [keyboard]
     {S::both, "mouse", "enabled", "Mouse and keyboard", K::boolean, "", "", "true",
@@ -128,21 +151,27 @@ constexpr ConfigKey table[] = {
      "Sends the volume-down key to this device, wherever the input is."},
 
     // [detected]
-    {S::device, "detected", "width", "Android screen", K::integer, "2..100000", "px", "",
-     "Resolution in the natural orientation."},
-    {S::device, "detected", "height", "Android screen", K::integer, "2..100000", "px", "",
-     "Resolution in the natural orientation."},
-    {S::device, "detected", "diagonal_inch", "Android screen", K::real, "1..1000", "in", "",
-     "Screen diagonal."},
-    {S::device, "detected", "pointer_speed", "Android screen", K::integer, "-7..7", "", "0",
+    {S::device, "detected", "width", "Screen", K::integer, "2..100000", "", "",
+     "How far the cursor travels across the screen in its natural orientation: mouse counts when "
+     "measured with the wizard, pixels when typed together with a gain. With the real size "
+     "given, it is the counts, and the gain follows from the two."},
+    {S::device, "detected", "height", "Screen", K::integer, "2..100000", "", "",
+     "How far the cursor travels down the screen in its natural orientation: mouse counts when "
+     "measured with the wizard, pixels when typed together with a gain."},
+    {S::device, "detected", "real_width", "Screen", K::integer, "2..65536", "px", "",
+     "The screen's real width in pixels, as it is shown. Typed. The touchscreen is built from "
+     "it, and with the travel measured in counts it gives the gain."},
+    {S::device, "detected", "real_height", "Screen", K::integer, "2..65536", "px", "",
+     "The screen's real height in pixels, as it is shown. Typed."},
+    {S::device, "detected", "pointer_speed", "Screen", K::integer, "-7..7", "", "0",
      "Android's pointer speed setting."},
-    {S::device, "detected", "density", "Android screen", K::integer, "40..2000", "dpi", "",
+    {S::device, "detected", "density", "Screen", K::integer, "40..2000", "dpi", "",
      "The density Android lays out with (wm density)."},
-    {S::device, "detected", "accel", "Android screen", K::choice, "on|off", "", "",
+    {S::device, "detected", "accel", "Screen", K::choice, "on|off", "", "",
      "Whether the device's pointer acceleration is on."},
-    {S::device, "detected", "gain", "Android screen", K::real, "0.05..50", "px/count", "",
-     "Pixels the cursor moves per count at low speed, typed or measured; empty is calculated from "
-     "pointer_speed and density."},
+    {S::device, "detected", "gain", "Screen", K::real, "0.05..50", "px/count", "",
+     "Pixels the cursor moves per count at low speed, typed; empty is calculated from the real "
+     "size and the measured travel, else from pointer_speed and density."},
 
     // [placement]
     {S::device, "placement", "monitor", "Placement", K::text, "", "", "",
@@ -151,20 +180,18 @@ constexpr ConfigKey table[] = {
      "Serial of another device to sit next to; empty sits beside a monitor."},
     {S::device, "placement", "side", "Placement", K::choice, "left|right|top|bottom", "", "right",
      "Which side of the monitor or neighbour the device sits on."},
-    {S::device, "placement", "start", "Placement", K::integer, "-1000000..1000000", "px", "",
-     "Where the device starts, in PC pixels from the start of that edge; empty centres it."},
-    {S::device, "placement", "length", "Placement", K::integer, "2..1000000", "px", "",
-     "Its length in PC pixels; empty follows the real sizes."},
+    {S::device, "placement", "start", "Placement", K::text, "pixels, or -100%..200%", "", "",
+     "Where the device starts along the edge it sits on, from the start of that edge: in pixels, "
+     "or as a percent of the edge (25%), which fits any size. Empty centres it."},
+    {S::device, "placement", "length", "Placement", K::text, "pixels, or 1%..1000%", "", "",
+     "How much of that edge the device covers: in pixels, or as a percent of the edge (50%), "
+     "which fits any size. Empty covers all of it."},
     {S::device, "placement", "corner_margin", "Placement", K::text, "0%..49%", "", "5%",
      "Dead zone at each corner of a monitor's edge; not used beside a device."},
-    {S::device, "placement", "monitor_diagonal_inch", "Placement", K::real, "1..1000", "in", "",
-     "For a monitor that reports no physical size."},
     {S::device, "placement", "rotation", "Placement", K::integer, "0, 90, 180 or 270", "deg", "",
-     "How the device is turned now; it is not followed, so set it again when the device is "
-     "turned."},
-    {S::device, "placement", "turn_input", "Placement", K::integer, "0, 90, 180 or 270", "deg", "0",
-     "How far the picture on the device is turned for the person looking at it; leave at 0 unless "
-     "the device is mounted turned."},
+     "Touch mode only: how far the screen as shown is turned from the touchscreen's own axes. "
+     "A mouse needs none, but touch positions do not follow the screen's rotation by themselves: "
+     "set it again when the screen is turned, or when taps land with x and y swapped."},
 
     // device file [mim] and [usb]: a board only
     {S::device, "mim", "port", "Board", K::text, "", "", "",
@@ -175,14 +202,18 @@ constexpr ConfigKey table[] = {
      "The serial line rate of this board, one of libmimhid's rates (115200 to 4000000). Adding "
      "the board from the search (rescan) writes the fastest rate the search saw the board and "
      "its serial adapter carry; there is no default."},
-    {S::device, "usb", "vendor_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",
-     "The vendor id the board announces to its target; there is no default."},
-    {S::device, "usb", "product_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",
-     "The product id the board announces; there is no default."},
-    {S::device, "usb", "manufacturer", "Board USB", K::text, "at most 31 characters", "", "",
-     "The manufacturer string the board announces; there is no default."},
-    {S::device, "usb", "product", "Board USB", K::text, "at most 31 characters", "", "",
-     "The product string the board announces; there is no default."},
+    {S::device, "usb", "vendor_id", "Board USB", K::text, "0x0001..0xFFFF", "", "0x1209",
+     "The vendor id the board announces to its target. Left out, vendor_id and product_id "
+     "together are the pid.codes test id 1209:0001, which is for in-house testing only; give "
+     "both or neither."},
+    {S::device, "usb", "product_id", "Board USB", K::text, "0x0001..0xFFFF", "", "0x0001",
+     "The product id the board announces; see vendor_id."},
+    {S::device, "usb", "manufacturer", "Board USB", K::text, "at most 31 characters", "",
+     "Generic", "The manufacturer string the board announces."},
+    {S::device, "usb", "product", "Board USB", K::text, "at most 31 characters", "",
+     "USB Input Device", "The product string the board announces."},
+    {S::device, "usb", "language_id", "Board USB", K::text, "0x0001..0xFFFF", "", "0x0409",
+     "The language id (LANGID) of every string the board announces."},
     {S::device, "usb", "serial", "Board USB", K::text, "at most 31 characters", "", "",
      "The serial number the board announces; empty announces none (unless serial_from_chip_id)."},
     {S::device, "usb", "serial_from_chip_id", "Board USB", K::boolean, "", "", "false",
@@ -198,12 +229,57 @@ constexpr ConfigKey table[] = {
     {S::device, "usb", "configuration", "Board USB", K::text, "at most 31 characters", "", "",
      "The configuration string the board announces; empty announces none."},
 
+    // device file [usb.mouse] ... [usb.touch]
+    NODE_USB_ROWS("usb.mouse", "mouse"),
+    NODE_USB_ROWS("usb.keyboard", "keyboard"),
+    NODE_USB_ROWS("usb.media", "media keys"),
+    NODE_USB_ROWS("usb.touch", "touchscreen"),
+
+    // device file [touch_hid]
+    {S::device, "touch_hid", "maximum_contacts", "Touchscreen HID", K::integer, "1..16", "", "",
+     "How many fingers the touchscreen reports at most. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "contacts_per_report", "Touchscreen HID", K::integer, "1..16", "", "",
+     "How many contacts one report carries; at most maximum_contacts. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "contact_id_max", "Touchscreen HID", K::integer, "0..255", "", "",
+     "The largest contact id. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "contact_id_bits", "Touchscreen HID", K::integer, "1..8", "", "",
+     "Bit width of the contact id. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "contact_count_max", "Touchscreen HID", K::integer, "1..16", "", "",
+     "The largest contact count a report states. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "contact_count_bits", "Touchscreen HID", K::integer, "1..8", "", "",
+     "Bit width of the contact count. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "coordinate_bits", "Touchscreen HID", K::integer, "8..16", "", "",
+     "Bit width of x and y; their range always follows the real size. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "pressure_max", "Touchscreen HID", K::integer, "1..65535", "", "",
+     "Declares a pressure field with this largest value. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "pressure_bits", "Touchscreen HID", K::integer, "1..16", "", "",
+     "Bit width of pressure; needs pressure_max. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "width_max", "Touchscreen HID", K::integer, "1..65535", "", "",
+     "Declares a contact width field with this largest value. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "width_bits", "Touchscreen HID", K::integer, "1..16", "", "",
+     "Bit width of the contact width; needs width_max. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "height_max", "Touchscreen HID", K::integer, "1..65535", "", "",
+     "Declares a contact height field with this largest value. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "height_bits", "Touchscreen HID", K::integer, "1..16", "", "",
+     "Bit width of the contact height; needs height_max. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "azimuth_max", "Touchscreen HID", K::integer, "1..65535", "", "",
+     "Declares an azimuth field with this largest value. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "azimuth_bits", "Touchscreen HID", K::integer, "1..16", "", "",
+     "Bit width of azimuth; needs azimuth_max. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "scan_time_max", "Touchscreen HID", K::integer, "1..65535", "", "",
+     "Declares a scan time field with this largest value. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "scan_time_bits", "Touchscreen HID", K::integer, "1..16", "", "",
+     "Bit width of the scan time; needs scan_time_max. Empty takes the ordinary value of the link."},
+    {S::device, "touch_hid", "scan_time_unit_100us", "Touchscreen HID", K::integer, "1..65535", "", "",
+     "The scan time's unit in 100 microseconds; needs scan_time_max. Empty takes the ordinary value of the link."},
+
     // device file [adb]
     {S::device, "adb", "proxy", "Adb", K::boolean, "", "", "false",
      "Serve this device's ADB interface on its port."},
     {S::device, "adb", "port", "Adb", K::integer, "1024..65535", "", "",
      "Local TCP port of this device's ADB proxy; empty takes the next free one."},
 };
+#undef NODE_USB_ROWS
 
 constexpr StatusKey status_table[] = {
     // The top level.
@@ -242,7 +318,6 @@ constexpr StatusKey status_table[] = {
     {true, "proxy", "Device", "", "", "The ADB proxy port, or off."},
     {true, "size", "Device", "px", "", "The screen size in use (width x height)."},
     {true, "rotation", "Device", "deg", "", "The rotation in use."},
-    {true, "density", "Device", "px/mm", "", "Android pixels per millimetre, in use."},
     {true, "mode", "Device", "", "", "exact or curve."},
     {true, "gain", "Device", "px/count", "", "Pixels per count at low speed."},
     {true, "segment", "Device", "px",
@@ -255,6 +330,14 @@ constexpr StatusKey status_table[] = {
      "The tracked cursor range in the display's view space."},
     {true, "touch", "Device", "", "",
      "off, on, or not set: followed by what the touchscreen still needs."},
+    {true, "usb_test_id", "Device", "", "",
+     "A board only: yes when it announces the test id 1209:0001, which is for in-house testing "
+     "only, no when it announces ids of its own."},
+    {true, "clone", "Device", "", "",
+     "A board only: the plugged-in device it presents as its own (clone mode); absent when it "
+     "presents its own inputs."},
+    {true, "clone_notes", "Device", "", "",
+     "What of that device cannot be copied, separated by |."},
     {true, "touch_error", "Position", "px", "x|y",
      "How far a tap can be from the cursor: the width of the tracked range."},
     {true, "reports", "Link", "", "", "USB reports sent."},

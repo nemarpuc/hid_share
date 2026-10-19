@@ -203,24 +203,47 @@ LinkOptions link_options_for(const Config& config, const DeviceConfig& device) {
     options.mouse = mouse_of(config, device);
     options.keyboard = keyboard_of(config, device);
     options.media = media_of(config, device);
-    // The touchscreen Spec needs the natural size; without it there is no
-    // Node, and status says so (touch_state()).
-    options.touch = touch_of(config, device).enabled && device.width >= 2 && device.height >= 2;
-    options.touch_size = {device.width, device.height};
+    // The touchscreen Spec is the real size, turned by the rotation; without
+    // them there is no Node, and status says so (touch_state()).
+    options.touch = touch_of(config, device).enabled && has_real_size(device) &&
+                    device.rotation >= 0;
+    options.touch_size =
+        touch_raw_size({device.real_width, device.real_height}, device.rotation);
+    options.touch_hid = device.touch_hid;
     // Only a board has these; a phone's must not change when they do.
     if (device.link == LinkKind::mim) {
-        options.mim.baud = device.mim.baud;
-        options.mim.vendor_id = device.mim.vendor_id;
-        options.mim.product_id = device.mim.product_id;
-        options.mim.manufacturer = device.mim.manufacturer;
-        options.mim.product = device.mim.product;
-        options.mim.serial = device.mim.serial;
-        options.mim.serial_from_chip_id = device.mim.serial_from_chip_id;
-        options.mim.bcd_device = device.mim.bcd_device;
-        options.mim.max_power_ma = device.mim.max_power_ma;
-        options.mim.self_powered = device.mim.self_powered;
-        options.mim.remote_wakeup = device.mim.remote_wakeup;
-        options.mim.configuration = device.mim.configuration;
+        // The values left out take their ordinary ones here (docs/CONFIG.md, "[usb]").
+        const MimDevice mim = mim_of(device);
+        options.mim.baud = mim.baud;
+        options.mim.vendor_id = mim.vendor_id;
+        options.mim.product_id = mim.product_id;
+        options.mim.manufacturer = mim.manufacturer;
+        options.mim.product = mim.product;
+        options.mim.serial = mim.serial;
+        options.mim.serial_from_chip_id = mim.serial_from_chip_id;
+        options.mim.bcd_device = mim.bcd_device;
+        options.mim.max_power_ma = mim.max_power_ma;
+        options.mim.language_id = mim.language_id;
+        options.mim.self_powered = mim.self_powered;
+        options.mim.remote_wakeup = mim.remote_wakeup;
+        options.mim.configuration = mim.configuration;
+        options.node_usb = mim.node;
+        // A clone brings its own ids, strings and power values, and has no touchscreen.
+        if (device.clone) {
+            const CloneDevice& copy = device.clone->device;
+            options.clone = device.clone;
+            options.touch = false;
+            options.mim.vendor_id = copy.vendor_id;
+            options.mim.product_id = copy.product_id;
+            options.mim.manufacturer = copy.manufacturer;
+            options.mim.product = copy.product;
+            options.mim.serial = copy.serial;
+            options.mim.serial_from_chip_id = false;
+            options.mim.bcd_device = copy.bcd_device;
+            options.mim.max_power_ma = static_cast<uint16_t>(copy.max_power_ma);
+            options.mim.self_powered = copy.self_powered;
+            options.mim.remote_wakeup = copy.remote_wakeup;
+        }
     }
     return options;
 }
@@ -247,10 +270,10 @@ std::string touch_state(const Config& config, const DeviceConfig& device) {
     const auto lack = [&](const char* name) {
         missing += (missing.empty() ? "" : ", ") + std::string(name);
     };
-    if (device.width < 2)
-        lack("width");
-    if (device.height < 2)
-        lack("height");
+    if (device.real_width < 2)
+        lack("real_width");
+    if (device.real_height < 2)
+        lack("real_height");
     if (device.rotation < 0)
         lack("rotation");
     return missing.empty() ? "on" : "not set: " + missing;
@@ -479,6 +502,8 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
     rebuild_phones();
 
     watching_ = false;
+    // The first scan, made as the daemon starts, also searches for boards.
+    probe_boards_.store(true);
     device_thread_ = std::thread([this] { device_loop(); });
     for (;;) {
         // quit() sets quit_early_ and then reads ready_; this sets ready_ and
@@ -670,7 +695,7 @@ void Daemon::device_loop() {
 
         std::string error;
         // The ports of the boards that have a file are listed as they are;
-        // looking for others is done when asked for.
+        // looking for others is done at the start and when asked for.
         ScanRequest request;
         request.probe_boards = probe_boards_.exchange(false);
         for (const DeviceConfig& device : config.devices) {
@@ -846,17 +871,13 @@ bool Daemon::measure(Phone& phone) {
     const auto lack = [&](const char* name) {
         missing += (missing.empty() ? "" : ", ") + std::string(name);
     };
-    if (device.width < 2)
+    if (view_width(device) < 2)
         lack("width");
-    if (device.height < 2)
+    if (view_height(device) < 2)
         lack("height");
-    if (device.rotation < 0)
-        lack("rotation");
-    if (device.diagonal_inch <= 0.0)
-        lack("diagonal_inch");
     const double gain = effective_gain(device);
     if (gain <= 0.0)
-        lack("gain, or the pointer speed and the density");
+        lack("gain, or the real size with the measured travel, or the pointer speed and the density");
     if (device.accel == AccelSetting::automatic)
         lack("accel");
     if (!missing.empty()) {
@@ -864,10 +885,9 @@ bool Daemon::measure(Phone& phone) {
                        ". Enter them on the Screen tab, or measure the gain there";
         return false;
     }
-    phone.natural = {device.width, device.height};
+    phone.natural = {view_width(device), view_height(device)};
     phone.rotation = device.rotation;
-    phone.density = std::hypot(phone.natural.w, phone.natural.h) / (device.diagonal_inch * 25.4);
-    phone.view = view_size(phone.natural, phone.rotation, device.mount_rotation);
+    phone.view = phone.natural;
 
     // How far one count moves the phone's cursor (docs/MATH.md, "Gain"): the
     // gain given is the one at low speed, and the only one with acceleration
@@ -897,37 +917,19 @@ bool Daemon::place_on_monitor(Phone& phone) {
         return false;
     }
     const Rect& rect = monitors_[monitor].rect;
-    // Pixels per millimetre along each axis: a monitor driven at a mode with
-    // non-square pixels has two different ones. A diagonal given by hand
-    // assumes square pixels; so does an axis the monitor reports no size for.
-    double density_x = monitor_density(monitors_[monitor], true);
-    double density_y = monitor_density(monitors_[monitor], false);
-    if (device.monitor_diagonal_inch > 0.0)
-        density_x = density_y = std::hypot(rect.w, rect.h) / (device.monitor_diagonal_inch * 25.4);
-    if (density_x <= 0.0)
-        density_x = density_y;
-    if (density_y <= 0.0)
-        density_y = density_x;
-    const bool need_density = device.segment_length < 0;
-    if (density_x <= 0.0 && need_density) {
-        phone.status = "the monitor's physical size is not known: set monitor_diagonal_inch";
-        return false;
-    }
-    // The density along the shared edge sizes the device against it.
-    const double pc_density = vertical(device.side) ? density_y : density_x;
 
     PortalRequest request;
     request.monitor = monitor;
     request.side = device.side;
     request.android_length = vertical(device.side) ? phone.view.h : phone.view.w;
-    request.anchor_length =
-        device.segment_length > 0
-            ? device.segment_length
-            : static_cast<int>(std::lround(request.android_length / phone.density * pc_density));
+    // How much of the edge it covers: pixels, a ratio of the edge, or all of it.
+    const int edge = vertical(device.side) ? rect.h : rect.w;
+    request.anchor_length = edge_length_of(device, edge);
     // The config counts from the start of the monitor's edge, so a monitor
     // left of or above the origin needs no negative numbers.
-    request.centered = device.segment_start == centred_start;
-    request.anchor_start = (vertical(device.side) ? rect.y : rect.x) + device.segment_start;
+    request.centered = !edge_start_given(device);
+    request.anchor_start = (vertical(device.side) ? rect.y : rect.x) +
+                           (request.centered ? 0 : edge_start_of(device, edge));
     request.corner_margin = device.corner_margin;
     const std::string error = resolve_portal(monitors_, request, phone.portal);
     if (!error.empty()) {
@@ -946,16 +948,13 @@ bool Daemon::place_beside(Phone& phone, const Phone& parent) {
     const bool is_vertical = vertical(device.side);
     const int parent_length = is_vertical ? parent.view.h : parent.view.w;
     const int own_length = is_vertical ? phone.view.h : phone.view.w;
-    const int length =
-        device.segment_length > 0
-            ? device.segment_length
-            : static_cast<int>(std::lround(own_length / phone.density * parent.density));
+    const int length = edge_length_of(device, parent_length);
     if (length < 2) {
         phone.status = "it is too short beside " + label_of(parent.config);
         return false;
     }
-    const int start =
-        device.segment_start == centred_start ? (parent_length - length) / 2 : device.segment_start;
+    const int start = edge_start_given(device) ? edge_start_of(device, parent_length)
+                                               : (parent_length - length) / 2;
     Portal& beside = phone.beside;
     beside.monitor = 0;
     beside.side = device.side;
@@ -1048,12 +1047,12 @@ void Daemon::relayout() {
                 neighbours.push_back(
                     {child.config.side, child.beside.segment, static_cast<int>(other)});
         }
-        phone.session->configure(phone.portal, phone.view, phone.config.mount_rotation,
-                                 phone.motion, phone.accel, std::move(neighbours), phone.has_pc);
+        phone.session->configure(phone.portal, phone.view, phone.motion, phone.accel,
+                                 std::move(neighbours), phone.has_pc);
         const Touch touch = touch_of(config_, phone.config);
         TouchSetup setup;
         setup.enabled = touch.enabled && phone.link_options.touch;
-        setup.natural = phone.natural;
+        setup.natural = touch_raw_size(phone.view, phone.rotation);
         setup.rotation = phone.rotation;
         setup.button = touch.button;
         setup.swipe = touch.swipe;
@@ -1418,6 +1417,18 @@ void Daemon::publish_status() {
             lines << prefix << "plugged=" << (plugged_.count(entry.serial) != 0 ? "yes" : "no")
                   << "\n";
             lines << prefix << "touch=" << touch_state(config_, phone->config) << "\n";
+            if (phone->config.link == LinkKind::mim) {
+                lines << prefix << "usb_test_id="
+                      << (uses_test_id(mim_of(phone->config)) ? "yes" : "no") << "\n";
+                if (phone->config.clone) {
+                    lines << prefix << "clone=" << one_line(phone->config.clone->source) << "\n";
+                    const auto& notes = phone->config.clone->device.notes;
+                    std::string joined;
+                    for (const std::string& note : notes)
+                        joined += (joined.empty() ? "" : " | ") + note;
+                    lines << prefix << "clone_notes=" << one_line(joined) << "\n";
+                }
+            }
             if (!phone->status.empty())
                 lines << prefix << "status=" << one_line(phone->status) << "\n";
             if (phone->link >= 0) {
@@ -1429,8 +1440,6 @@ void Daemon::publish_status() {
                           << "\n";
                 if (phone->rotation >= 0)
                     lines << prefix << "rotation=" << phone->rotation << "\n";
-                if (phone->density > 0.0)
-                    lines << prefix << "density=" << phone->density << "\n";
                 if (phone->layout_ok) {
                     lines << prefix << "mode=" << mode_name(phone->mode) << "\n";
                     lines << prefix << "gain=" << phone->gain << "\n";
@@ -1614,9 +1623,11 @@ std::string Daemon::command(const std::string& line) {
             }
         } else if (verb == "probe") {
             // Moves a connected device's cursor by raw counts, for measuring
-            // its display by eye when adb cannot be asked (docs/MATH.md).
-            // "probe NAME corner" or "probe NAME move DX DY"; a name may
-            // hold spaces, so it is what is left of the line.
+            // its display by eye when adb cannot be asked (docs/MATH.md), or
+            // taps a pixel of its screen as shown, to see how the touch is
+            // turned. "probe NAME corner", "probe NAME move DX DY" or
+            // "probe NAME tap X Y"; a name may hold spaces, so it is what is
+            // left of the line.
             std::string name = rest_of(words);
             std::string what;
             Delta counts{-probe_reach, -probe_reach};
@@ -1627,12 +1638,19 @@ std::string Daemon::command(const std::string& line) {
                 known = true;
             } else {
                 const size_t move = name.rfind(" move ");
+                const size_t tap = name.rfind(" tap ");
                 if (move != std::string::npos) {
                     std::istringstream numbers(name.substr(move + 6));
                     what = "move";
                     known = static_cast<bool>(numbers >> counts.x >> counts.y) &&
                             (numbers >> std::ws).eof();
                     name.erase(move);
+                } else if (tap != std::string::npos) {
+                    std::istringstream numbers(name.substr(tap + 5));
+                    what = "tap";
+                    known = static_cast<bool>(numbers >> counts.x >> counts.y) &&
+                            (numbers >> std::ws).eof();
+                    name.erase(tap);
                 }
             }
             const size_t index = phone_named(name);
@@ -1645,7 +1663,24 @@ std::string Daemon::command(const std::string& line) {
                 answer = "error=bring the input back first";
             } else if (!known || std::abs(counts.x) > probe_reach ||
                        std::abs(counts.y) > probe_reach) {
-                answer = "error=probe DEVICE corner | probe DEVICE move DX DY";
+                answer = "error=probe DEVICE corner | move DX DY | tap X Y";
+            } else if (what == "tap") {
+                // The pixel is of the screen as shown, so it goes through the
+                // same conversion as a click (docs/MATH.md, "Touch").
+                if (!phone->link_options.touch || !phone->layout_ok) {
+                    answer = "error=touch is not on for that device";
+                } else if (counts.x < 0 || counts.y < 0 || counts.x >= phone->view.w ||
+                           counts.y >= phone->view.h) {
+                    answer = "error=that pixel is not on the screen";
+                } else {
+                    const TouchPoint at = to_touch_point(
+                        phone->view, touch_raw_size(phone->view, phone->rotation), phone->rotation,
+                        counts.x, counts.y);
+                    Sink& sink = hub_.sink(phone->link);
+                    sink.touch(0, at.x, at.y, true);
+                    sink.touch(0, at.x, at.y, false);
+                    answer = "ok";
+                }
             } else {
                 hub_.sink(phone->link).jump(counts);
                 // The cursor is no longer where the session left it.

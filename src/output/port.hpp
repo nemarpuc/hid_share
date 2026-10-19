@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "hid_share/config.hpp"
 #include "hid_share/geometry.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -46,6 +49,8 @@ struct MimOptions {
     // 0: the constants of the MIM backend.
     uint16_t bcd_device{};
     uint16_t max_power_ma{};
+    // 0: the constant of the MIM backend.
+    uint16_t language_id{};
     bool self_powered{};
     bool remote_wakeup{};
     std::string configuration;
@@ -63,13 +68,21 @@ struct LinkOptions {
     // The touchscreen Node, built for the device's natural size.
     bool touch{};
     Size touch_size{};
+    // The touchscreen's descriptor values; those left out take the link's own.
+    TouchHid touch_hid;
+    // Each Node's USB interface values, in NodeKind order; a board only.
+    std::array<NodeUsb, usb_nodes> node_usb;
     // Used by a board only.
     MimOptions mim;
+    // A board only: the plugged-in device it presents instead of the Nodes above (those
+    // switches then say which of its parts are presented; touch is not available).
+    std::optional<CloneSnapshot> clone;
 };
 
 // What a scan may look at. A board is found by sending a message to every
 // serial port that could be one, which can upset other equipment on them and
-// the board that is already open, so it happens only when asked for.
+// the board that is already open, so it happens only as the daemon starts and
+// when the user asks.
 struct ScanRequest {
     bool probe_boards{};
     // Serial ports the user named; they are listed without being probed.
@@ -82,6 +95,14 @@ inline constexpr size_t node_kinds = 4;
 // A set of NodeKind, one bit each.
 [[nodiscard]] constexpr uint8_t node_bit(const NodeKind kind) noexcept {
     return static_cast<uint8_t>(1U << kind);
+}
+
+// The smallest bit width that holds 0..maximum.
+[[nodiscard]] constexpr uint32_t bits_to_hold(const int64_t maximum) noexcept {
+    uint32_t bits = 1;
+    while (bits < 32 && (int64_t{1} << bits) - 1 < maximum)
+        ++bits;
+    return bits;
 }
 
 // What Hub::start_proxy returns when a target has no ADB interface to serve or

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "app.hpp"
+#include "tabs.hpp"
 
 #include "control.hpp"
 #include "paths.hpp"
@@ -249,9 +250,8 @@ void connect_device(App& app, const std::string& serial) {
     if (index < app.config.devices.size()) {
         app.device = index;
         app.computer = false;
-        // The first device is set up from the start; later ones keep the tab in use.
-        if (app.config.devices.size() == 1)
-            app.device_tab = 0;
+        // A device that was just added is set up from its Setup tab.
+        app.device_tab = static_cast<int>(DeviceTab::setup);
     }
 }
 

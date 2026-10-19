@@ -14,10 +14,9 @@ the order the code applies it (`src/core/`).
 
 | Symbol | Meaning |
 | --- | --- |
-| `Wn, Hn` | the device's resolution in its natural orientation |
-| `r` | Android's display rotation: 0, 90, 180, 270 |
-| `m` | mount rotation: how far the content looks rotated clockwise to the user |
 | `W, H` | width and height in view space |
+| `t` | touch rotation: how far the display as shown is turned from the touchscreen's axes: 0, 90, 180, 270 (touch only) |
+| `Wr, Hr` | the touchscreen's raw size: `W x H`, swapped when `t` is 90 or 270 |
 | `da`, `dp` | pixels per millimetre of the device and of the PC monitor |
 | `side` | which edge of the PC monitor the device sits at |
 | `[a0, a1]` | the device's extent along that edge, in PC pixels (the anchor) |
@@ -27,73 +26,44 @@ the order the code applies it (`src/core/`).
 
 ## Orientation
 
-Two settings, because they answer different questions.
-
-`r` only decides the size. Android rotates a mouse's movement itself, so that
+The mouse needs no rotation. Android turns a mouse's movement itself, so that
 "right" on the mouse is "right" on the display in every rotation
 ([`CursorInputMapper::sync`](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/services/inputflinger/reader/mapper/CursorInputMapper.cpp)
-calls `rotateDelta`). Confirmed on a Galaxy Tab S11 in rotation 90.
-
-```
-r = 0 or 180:   (Wl, Hl) = (Wn, Hn)
-r = 90 or 270:  (Wl, Hl) = (Hn, Wn)
-```
-
-`m` is for a device whose content is not upright to the user, for example
-rotation-locked and lying on its side. It swaps the size once more and turns
-every movement:
-
-```
-m = 0 or 180:   (W, H) = (Wl, Hl)
-m = 90 or 270:  (W, H) = (Hl, Wl)
-```
-
-| m | sent x | sent y |
-| --- | --- | --- |
-| 0 | vx | vy |
-| 90 | vy | -vx |
-| 180 | -vx | -vy |
-| 270 | -vy | vx |
-
-Everything below is in view space; the turn is applied last, once.
+calls `rotateDelta`). Confirmed on a Galaxy Tab S11 in rotation 90. The size
+`W x H` is measured (or typed) in the mouse's own axes, that is the display as it
+is shown, so the position is tracked without knowing how the device is turned
+and nothing is sent turned.
 
 ## Touch
 
-A touchscreen reports absolute positions in the device's natural orientation
-(`Wn x Hn`), unlike a mouse, which Android turns itself. So the tracked
-position (view space) is converted in two steps. The mount is undone first
-(view space is display space turned `m` degrees clockwise):
-
-| m | display x | display y |
-| --- | --- | --- |
-| 0 | vx | vy |
-| 90 | vy | W - 1 - vx |
-| 180 | W - 1 - vx | H - 1 - vy |
-| 270 | H - 1 - vy | vx |
-
-Then the display rotation. Android turns a touchscreen's raw positions by the
+A touchscreen reports absolute positions in its own axes, `Wr x Hr` (the real
+size `Rw x Rh`, swapped when `t` is 90 or 270; the touchscreen is built from it), and
+Android does not turn them with the mouse: it turns the raw positions by the
 inverse of the display's orientation to get the position on the rotated
 display
 ([`TouchInputMapper::computeInputTransforms`](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/services/inputflinger/reader/mapper/TouchInputMapper.cpp),
 steps 2 to 5, with the rotations of
 [`ui::Transform::set`](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/libs/ui/Transform.cpp)).
-The conversion here is the inverse of that:
+Nothing tells the host which way the display is turned, so `t` is set by hand:
+turn it until a tap lands where the cursor is. Let `u = vx / (W - 1)` and
+`v = vy / (H - 1)` be the tracked position as fractions of the display; the
+conversion is the inverse of Android's:
 
-| r | raw x | raw y |
+| t | raw x (fraction) | raw y (fraction) |
 | --- | --- | --- |
-| 0 | dx | dy |
-| 90 | Wn - 1 - dy | dx |
-| 180 | Wn - 1 - dx | Hn - 1 - dy |
-| 270 | dy | Hn - 1 - dx |
+| 0 | u | v |
+| 90 | 1 - v | u |
+| 180 | 1 - u | 1 - v |
+| 270 | v | 1 - u |
 
-The result is rounded and clamped to `0..Wn-1`, `0..Hn-1`. The tap position is
-the midpoint of the tracked range, so it is as exact as the range is narrow
-(`exact` mode, or an edge that fixed it). AOSP does this on floating-point
-positions and flips about the size rather than the size less one, so with
-integer raw values the landing pixel can differ by one in rotations 90, 180 and
-270; that is far below what a tap needs. A touchscreen that is external and
-has no display of its own to follow is put on the internal display
-(`TouchInputMapper::findViewport`).
+The raw position is the fraction times `Wr - 1` and `Hr - 1`, rounded and
+clamped to the raw area. The tap position is the midpoint of the tracked range,
+so it is as exact as the range is narrow (`exact` mode, or an edge that fixed
+it). AOSP does this on floating-point positions and flips about the size rather
+than the size less one, so with integer raw values the landing pixel can differ
+by one in rotations 90, 180 and 270; that is far below what a tap needs. A
+touchscreen that is external and has no display of its own to follow is put on
+the internal display (`TouchInputMapper::findViewport`).
 
 ## Several monitors
 
@@ -151,6 +121,28 @@ base gain of the first segment of its mouse acceleration curve
 `density` is what `wm density` prints. On that device the gain did not change
 with speed (acceleration is off there through Samsung's "Enhance pointer
 precision" setting), slow and fast movements both gave 2.169.
+
+**From the real size.** With acceleration off, the gain can also be had without
+Android's numbers, from the screen's real size `Rw x Rh` (typed) and the travel
+the calibration wizard measured in counts, `cx` across and `cy` down (the counts
+that took the cursor from the top left pixel to the last pixel of each edge; the
+config's `width` and `height` are `cx + 1` and `cy + 1`):
+
+```
+G = ((Rw - 1) + (Rh - 1)) / (cx + cy)
+```
+
+Both axes are taken together because a count moves the cursor the same distance
+on both, so each axis's reading error of a few counts weighs less against the
+longer total. When `G` over one axis alone differs from the other by more than
+1%, one edge was passed or stopped short of, and the settings window says so.
+The wizard presses 100, 10 and then single counts toward the far edge, never past
+it (a press that passed it makes the count wrong, and the wizard is run again). The
+press of 1 that moves nothing found the edge and is not counted, so `cx` is the
+counts of the presses before it (`ProbeAxis`). The last press that moved may have
+been clamped part-way, so `cx` is exact to within one step: `dG / G` is below `1 / cx`, 0.05 % at 2000 counts. With
+`Rw x Rh` given, the daemon works in real pixels: the
+screen is `W = Rw`, `H = Rh`, and `G` is the pixels one count moves the cursor.
 
 With acceleration on, AOSP's curve applies: for a speed `v` in mm/s (counts
 taken as an 800 CPI mouse),
@@ -244,7 +236,7 @@ edge at `y_last`. One report moves it to the new height:
 counts_y = round((ue - y_last) / G)
 ```
 
-**Corner reference** (first entry, after a rotation change, when the range is
+**Corner reference** (first entry, after a change of layout, when the range is
 wider than `resync_width`, on request, or always with `entry = corner`). Two
 reports, sent separately so Android clamps the first before applying the
 second:
@@ -281,7 +273,7 @@ edge, and that midpoint is kept as `y_last`.
 With `entry = parked` one more report then sends the device's cursor to its bottom
 right corner, `(+N, +N)` in Android's own axes. Android turns a mouse's
 movement with the display, so this is the bottom right of what is shown in
-every rotation; for a mounted device the report is turned by the mount first.
+every rotation.
 The arrow's tip is its top left, so nearly all of it is off the display there,
 and the clamp makes the position `(W - 1, H - 1)` exactly.
 
@@ -307,18 +299,17 @@ W = Cx + 1,  H = Cy + 1,  G = 1
 then stepped until the arrow, whose tip is its top left, has all but left the
 display at the far edge. A miscount of `e` counts moves the far edge by `e`
 counts in the model and nothing else; it does not grow, because every return
-parks the cursor in a corner again. The diagonal in inches is still needed to
-size the device against the monitor's edge when `length` is not set.
+parks the cursor in a corner again. How much of the monitor's edge the device
+covers is not taken from physical sizes: `length` gives it, in pixels or as a ratio of
+the edge, and without it the device covers the whole edge.
 
 This holds while `G` is one number, that is with pointer acceleration off on
 the device.
 
 ## Checks
 
-`tests/test_core.cpp` runs 768 combinations (4 sides × 4 mount rotations × 4
-display rotations × exact and uncertain gain × parked or not × 3
-sensitivities), 20 round trips
-each, against a model of Android's clamp and gain, and checks that the real
+`tests/test_core.cpp` runs 48 combinations (4 sides × exact and uncertain gain
+× parked or not × 3 sensitivities), 20 round trips each, against a model of Android's clamp and gain, and checks that the real
 position stays inside the range, that entry lands within half a count's travel
 in exact mode, and that a return only happens with the cursor really on the
 edge.

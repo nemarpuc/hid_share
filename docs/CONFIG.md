@@ -38,6 +38,7 @@ is unanswered, for instance) the daemon keeps running, `status` shows
 | Key | Default | |
 | --- | --- | --- |
 | `backend` | `auto` | `auto`, `x11`, `portal`, `layer_shell`, `evdev`, `windows`, `macos` |
+| `beta` | `false` | shows the Beta tab of the settings window, where touch mode and its settings are (real size, rotation, tap, swipe, descriptor). It hides nothing in the files and changes no behaviour: a device with touch on keeps it while the tab is hidden |
 
 The shortcuts are each device's own: see [`[keys]`](#keys).
 
@@ -67,9 +68,19 @@ on every backend but `macos`, which does not capture those keys.
 Touchscreen mode registers a touchscreen on the device (a fourth input next to
 the mouse, keyboard and media keys). The mouse stays as the marker of where
 the cursor is; the left button, pressed where the cursor is, becomes a tap
-there, and moving while it is held drags. It needs the device's `width`,
-`height` and `rotation`; without them the touchscreen is not registered and
-`status` says what is missing (`touch`).
+there, and moving while it is held drags. It needs the device's `real_width`,
+`real_height` and `rotation`; without them the touchscreen is not registered and
+`status` says what is missing (`touch`). The touchscreen is the real size of the
+screen (turned by `rotation`), so a tap lands on the pixel the cursor is on.
+
+Unlike the mouse, which Android turns with the screen, touch positions do not
+follow the screen's rotation by themselves. `rotation` says how far the screen as
+shown is turned from the touchscreen's own axes; if taps land with x and y
+swapped or mirrored, turn it (the **Turn touch 90 degrees** button of the Beta tab)
+until they land right, and set it again whenever the screen is turned. The **Test tap**
+button taps a quarter in from the top left corner of the screen as shown (the control
+command `probe DEVICE tap X Y` taps any pixel of it), which a wrong rotation puts in
+another corner.
 
 | Key | Default | |
 | --- | --- | --- |
@@ -107,7 +118,7 @@ as `scroll_overlap` says; a notch that comes meanwhile lifts it first.
 While a finger is down no mouse report is sent (the same reason as for a
 drag above): movement that comes in meanwhile is summed and sent after the
 lift. How the position is turned into the touchscreen's own coordinates, for
-every rotation and mount, is in [docs/MATH.md](MATH.md#touch).
+every rotation, is in [docs/MATH.md](MATH.md#touch).
 
 ## `[motion]`
 
@@ -153,18 +164,18 @@ wizard in the terminal. It resets the cursor to the
 top-left corner, lets you move the cursor across the width and height using the
 Space key (tap for 1 count, hold for continuous motion, Backspace to step back,
 Enter to confirm), and directly sets your device's screen dimensions (Width, Height,
-Gain = 1.0, and Accel = off) based on the measured counts and screen rotation
+Gain = 1.0, and Accel = off) based on the measured counts
 ([MATH.md](MATH.md#without-adb)). Upon confirmation, the dimensions are saved
-directly into the device's settings file and the daemon is reloaded.
+directly into the device's settings file and the daemon is reloaded. 
 
 ## Boards
 
 A device with `link = mim` is a microcontroller board reached over its serial
 port (libmimhid). Its port and speed are in its own file (`[mim]` below). A
 board that has a file is opened on the port its file names, without searching.
-Other boards are found only when the user asks (`rescan`, the refresh icon of
-the settings window), because the search sends a message to every serial port
-that could be one, at each of libmimhid's line rates. The search measures the
+Other boards are found as the daemon starts and when the user asks (`rescan`, the
+refresh icon of the settings window), and at no other time, because the search sends
+a message to every serial port that could be one, at each of libmimhid's line rates. The search measures the
 fastest rate each board's serial adapter carries, and a port in use (by this
 program or another) is passed over.
 
@@ -238,12 +249,14 @@ Those keys are still read, and dropped: set the keys again here.
 | `beside` | empty | serial of another device to sit next to; empty sits beside a monitor |
 | `monitor` | empty | monitor name as `status` shows it; empty is the first monitor |
 | `side` | `right` | `left`, `right`, `top`, `bottom` |
-| `start` | empty | where the device starts, in PC pixels from the start of that monitor's or neighbour's edge; not set, it is centred |
-| `length` | empty | its length in PC pixels; not set, it follows the real sizes |
+| `start` | empty | where the device starts along the edge it sits on, from the start of that monitor's or neighbour's edge: in pixels, or as a percent of the edge (`25%`), which fits any monitor or device; not set, it is centred |
+| `length` | empty | how much of that edge it covers: in pixels, or as a percent of the edge (`50%`); not set, all of it. The settings window writes percents when a device is dragged or resized in the picture |
 | `corner_margin` | `5%` | dead zone at each corner of a monitor's edge (not used beside a device) |
-| `monitor_diagonal_inch` | empty | for a monitor that reports no physical size |
-| `rotation` | empty | `0`, `90`, `180`, `270`: how the device is turned now. It is not followed: set it again when the device is turned |
-| `turn_input` | `0` | how far the picture on the device is turned for the person looking at it (see [MATH.md](MATH.md)); leave at `0` unless the device is mounted turned |
+| `rotation` | empty | touch mode only: `0`, `90`, `180`, `270`, how far the screen as shown is turned from the touchscreen's own axes (see [MATH.md](MATH.md#touch)). A mouse needs none. It is not followed: set it again when the screen is turned |
+
+A `diagonal_inch` line (and `monitor_diagonal_inch` in `[placement]`) from before 0.4.0 is
+read and dropped: a device now covers the whole edge it sits next to, or the ratio of it
+`length` gives.
 
 ### `[detected]`
 
@@ -251,28 +264,29 @@ What the device's screen is, typed or measured:
 
 | Key | Default | |
 | --- | --- | --- |
-| `width`, `height` | empty | resolution in the natural orientation |
-| `diagonal_inch` | empty | screen diagonal |
+| `width`, `height` | empty | how far the cursor can travel across and down the screen in its natural orientation: mouse counts when measured with the calibration wizard, pixels when typed together with a `gain`. The daemon needs them to know where the cursor is, because a mouse only says how far it moved. With `real_width` and `real_height` given they are the counts, and the gain follows from them |
+| `real_width`, `real_height` | empty | the screen's real size in pixels as it is shown (2 to 65536), typed. When both are given they are the screen the daemon works in, and the touchscreen is built from them. With the travel measured in counts they give the gain |
 | `pointer_speed` | `0` | Android's pointer speed setting (-7 to 7) |
 | `density` | empty | the density Android lays out with (`wm density`), in dpi |
 | `accel` | empty | `off` or `on`: whether the device's pointer acceleration is on |
-| `gain` | empty | pixels the cursor moves per count at low speed, typed or measured ([MATH.md](MATH.md#gain)); empty: calculated from `pointer_speed` and `density` |
+| `gain` | empty | pixels the cursor moves per count at low speed, typed ([MATH.md](MATH.md#gain)); empty: calculated from the real size and the measured travel, else from `pointer_speed` and `density` |
 
 **What Android's pointer speed changes.** Only `gain`, which follows from it:
 `gain = density / 320 * 0.64 * S[speed] / 10 * 3.19` ([MATH.md](MATH.md#gain)),
 with `density` the value above. The `gain` key is for a gain you typed or
 measured: left empty, the daemon uses that calculated value, so changing
 `pointer_speed` changes the gain in use at once. The settings
-window shows the calculation with its numbers (Screen tab). A `gain` in a file that is only what the speed and density give
+window shows the calculation with its numbers (Measure tab). A `gain` in a file that is only what the speed and density give
 is read as empty. The counts sent do not depend on any of this (the mouse's
 movement is sent as it comes); the gain only tells the daemon where Android's
 cursor is, for the return and the entry. Turn the speed up on the device and
 the cursor moves further for the same mouse movement, as it would for any USB
 mouse.
 
-The device is not used until `width`, `height`, `rotation`, `diagonal_inch`,
-`accel` and a gain (typed or measured, or `pointer_speed` with `density`) are set; its
-status names those that are not. The Setup tab of the settings window walks through them.
+The device is not used until its size (`real_width` and `real_height`, else `width` and
+`height`), `accel` and a gain (typed, from the real size and the measured travel, or
+`pointer_speed` with `density`) are set; its status names those that are not. The Setup tab of
+the settings window walks through them, and goes away once nothing is left to set.
 
 ### `[motion]` (device override)
 
@@ -293,28 +307,103 @@ this way takes no input for about 150 ms, while Android registers it.
 Any of `enabled`, `tap_button`, `swipe`, `scroll`, `scroll_pan`, `scroll_start_ms`, `scroll_steps`, `scroll_total_ms`, `scroll_overlap` and `scroll_release_ms`
 from the global `[touch]` section; a key the file leaves out follows config.ini.
 A running device has the touchscreen registered or removed on `reload`, as for
-the mouse, keyboard and media keys; a change of the device's `width` or
-`height` registers it again with the new size.
+the mouse, keyboard and media keys; a change of the device's `real_width` or
+`real_height` registers it again with the new size.
 
 ### `[mim]` and `[usb]` (a board)
 
-Written for a device with `link = mim`, and read for no other. None of the
-`[usb]` values has a default (no maker's name is assumed): the board is not
-opened while one of the first four is missing, and the device's status names
-it.
+Written for a device with `link = mim`, and read for no other. A `[usb]` value
+left out takes the default in the table; one given is used exactly. `baud` and
+`port` have none: they are facts of the hardware. The default ids are the
+pid.codes test id 1209:0001, which is for in-house testing only and must not be
+on a device that is redistributed, sold or manufactured; no other maker's id or
+name is a default, and the device's status says `usb_test_id=yes` while it is in
+use. `vendor_id` and `product_id` go together: both left out are the test id,
+one given alone is not completed, and the board is not opened until the other is
+given too (the status names it). A mouse's values can be copied from the settings
+window; whatever the mouse does not give returns to its default.
 
 | Key | Default | |
 | --- | --- | --- |
 | `baud` | empty | the serial line rate of this board, one of libmimhid's rates (115200, 230400, 460800, 921600, 1000000, 1500000, 2000000, 3000000, 4000000). Adding the board from the search (`rescan`) writes the fastest rate the search saw the board and its serial adapter carry; a rate they do not carry is refused when the board is opened. Boards differ, so it is the board's own, not the computer's |
 | `port` | empty | the board's serial port: `/dev/ttyUSB0`, a `/dev/serial/by-id/` path (it stays the same when the board is plugged in again) or `COM3`. The device's `serial` is `mim-` and the end of this, with anything a serial may not hold turned into `_`; a file whose serial is another is refused. It is set when the device is added and is not typed in the settings window |
-| `vendor_id`, `product_id` | empty | the ids the board announces to its target, 0x0001 to 0xFFFF |
-| `manufacturer`, `product` | empty | the strings it announces, printable ASCII, at most 31 characters |
+| `vendor_id`, `product_id` | `0x1209`, `0x0001` | the ids the board announces to its target, 0x0001 to 0xFFFF |
+| `manufacturer`, `product` | `Generic`, `USB Input Device` | the strings it announces, printable ASCII, at most 31 characters |
+| `language_id` | `0x0409` | the language id (LANGID) of every string it announces, 0x0001 to 0xFFFF |
 | `serial` | empty | the serial number it announces; empty announces none |
 | `serial_from_chip_id` | `false` | announce the chip's own id as the serial number when `serial` is empty |
 | `bcd_device` | empty | the device release number it announces, 0x0001 to 0xFFFF; empty announces 0x0100 |
 | `max_power_ma` | empty | the current it says it draws, 1 to 500 mA; empty announces 100 |
 | `self_powered`, `remote_wakeup` | `false` | the two bits of the configuration's attributes |
 | `configuration` | empty | the configuration string it announces; empty announces none |
+
+### `[usb.mouse]`, `[usb.keyboard]`, `[usb.media]`, `[usb.touch]` (a board's interfaces)
+
+Each Node of a board is one USB interface of its composite device, and each
+section holds that interface's own values. Every key is optional and is written
+to the file only when set; one left out takes the ordinary value. The sections
+need no `[usb]` values, and the same key means the same in all four.
+
+| Key | Default | |
+| --- | --- | --- |
+| `interface_number` | empty | 0 to 255 and below the board's interface count; empty gives the lowest numbers no pinned Node uses, in the order mouse, keyboard, media, touchscreen. Nodes with the same number share one interface (one HID interface with a Report ID for each), and then every one of them must have its own `report_id`; without that the board is not opened and the status says which |
+| `interface_name` | empty | the interface string, printable ASCII, at most 31 characters; empty announces none |
+| `poll_interval_ms` | empty | how often the target polls, 1 to 255 ms; empty takes the ordinary interval |
+| `ep_in_size`, `ep_out_size` | empty | endpoint sizes in bytes, any value from 1 to 64 as given, not rounded (the OUT endpoint also 0 for none); empty takes the ordinary sizes |
+| `bcd_hid` | empty | the HID release number, 0x0001 to 0xFFFF |
+| `country_code` | empty | 0 to 255 |
+| `report_id` | empty | 1 to 255; empty gives the report no Report ID. Nodes that share an interface must all have one, all different; Nodes on interfaces of their own may use any, the same too. Nothing is numbered for you |
+
+### `[clone]` (a board presents a plugged-in device)
+
+Written by the settings window (Connection tab, "Clone a plugged-in device"), not typed:
+it holds a snapshot of a USB device that was plugged into this computer, so the board
+presents that device whether or not it is still plugged in. For a board only. While it
+exists it replaces the `[usb]` and `[usb.*]` values of the device (they stay in the file
+and apply again when the clone is removed), and the touchscreen is not available.
+
+- The device level: `source` (what it was called), `vendor_id`, `product_id`, `bcd_device`,
+  `manufacturer`, `product`, `serial` (empty: none), `self_powered`, `remote_wakeup`,
+  `max_power_ma` (0 to 510), `battery` (0 to 100: the level reported when the device has a
+  battery), and `notes` (what cannot be copied, separated by ` | `).
+- `interface_0` to `interface_7`, one per HID interface, in order. Ten fields separated by
+  a space: the interface number, boot subclass, boot protocol, `bcdHID` (0x0111), country
+  code, IN endpoint size, OUT endpoint size (0: none), poll interval (ms), the interface
+  name in hex (`-`: none), and the report descriptor in hex.
+
+The mouse, keyboard and media switches decide which parts of the device are presented: a
+part that is off is cut out of the report descriptors the other computer sees, and an
+interface left with nothing is not presented. The input goes into the device's own reports:
+one keyboard, one mouse and one media collection are fed, and a device without one has
+nothing for that input. A battery is reported only when the device has one. What no
+interface of the board can answer (a vendor interface, a Feature report above 32 bytes) is
+presented but silent. The ids are another maker's: use this for your own testing, not on a
+device that is redistributed or sold.
+
+### `[touch_hid]` (the touchscreen's descriptor)
+
+Per device only, for a board and for a phone. The values of the touchscreen
+Node's HID descriptor; every key is optional and is written only when set, and
+one left out takes the ordinary value of the link. x and y always follow the
+real size: their range is `0` to the size minus 1, and `coordinate_bits` only
+sets their width (a board: 16; a phone: the smallest width that holds the size).
+An optional field (pressure, width, height, azimuth, scan time) is declared when
+its `*_max` is given; its `*_bits` left out is the smallest width that holds the
+maximum, and `*_bits` without `*_max` is refused. A change makes the Node register
+again.
+
+| Key | Default | |
+| --- | --- | --- |
+| `maximum_contacts`, `contacts_per_report` | 2, 2 | 1 to 16; the report carries no more than the screen has |
+| `contact_id_max`, `contact_id_bits` | a phone 15, a board 1; both 4 bits | 0 to 255; 1 to 8 |
+| `contact_count_max`, `contact_count_bits` | a phone 2 in 2 bits, a board 2 in 5 bits | 1 to 16; 1 to 8 |
+| `coordinate_bits` | see above | 8 to 16 |
+| `pressure_max`, `pressure_bits` | not declared | 1 to 65535; 1 to 16 |
+| `width_max`, `width_bits` | not declared | 1 to 65535; 1 to 16 |
+| `height_max`, `height_bits` | not declared | 1 to 65535; 1 to 16 |
+| `azimuth_max`, `azimuth_bits` | not declared | 1 to 65535; 1 to 16 |
+| `scan_time_max`, `scan_time_bits` | not declared | 1 to 65535; 1 to 16 |
+| `scan_time_unit_100us` | empty | the scan time's unit in 100 microseconds, 1 to 65535; needs `scan_time_max` |
 
 Adding or removing a Node (the mouse, keyboard, media keys or touchscreen) of
 an open board makes the board detach from its target and attach again, which
@@ -341,11 +430,13 @@ the daemon keeps, so asking never holds up the input. Per device the keys are
 | `serial`, `link`, `proxy` | its serial; `aoa` or `mim`; the proxy port or `off` |
 | `wanted`, `plugged` | `yes` when `connect` was asked for it and has not been undone; `yes` when the last scan saw it plugged in |
 | `locked` | `yes` while its lock key holds the input on it; only for a device that is open |
-| `size`, `rotation`, `density` | the values in use: pixels, degrees, Android pixels per millimetre |
+| `size`, `rotation` | the values in use: pixels, degrees (the touch rotation) |
 | `mode`, `gain` | `exact` or `curve`; pixels per count at low speed |
 | `segment`, `beside` | monitor, side, crossing span, device span (PC pixels) |
 | `position` | the tracked cursor range in the display's view space: x low, x high, y low, y high |
 | `touch`, `touch_error` | `off`, `on`, or `not set:` and what the touchscreen still needs; with touch on, how far a tap can be from the cursor: the width of the tracked range, x then y |
+| `clone`, `clone_notes` | a board only, while it presents a plugged-in device (clone mode): what it was called when read, and what of it cannot be copied (separated by `\|`) |
+| `usb_test_id` | a board only: `yes` while it announces the test id 1209:0001 (in-house testing only), `no` when its ids are its own |
 | `reports`, `merged`, `depth` | USB reports sent; inputs summed into a report that was already waiting; reports waiting now |
 | `samples`, `queue_us`, `total_us` | over the last 256 reports (microseconds, as typical, 99 of 100, worst since opened): from an input reaching the daemon to the start of its USB call, and to the report's completion. The device's own delay is not included |
 | `realtime` | whether the sender thread got a real-time priority (needs `RLIMIT_RTPRIO`) |
@@ -371,7 +462,7 @@ was found), `config_error`, `capture_error`,
 | `release` | bring input back to the computer |
 | `pause`, `resume` | pause or resume cursor crossing |
 | `resync` | re-reference the corner reference on the next crossing |
-| `rescan` | look for phones and boards now and wait for the result. A scan is made when the daemon starts and when asked (no automatic background scanning); only the one asked for also searches the serial ports for boards ([Boards](#boards)). A scan sends a request to every USB device, so none is made while a device has the input |
+| `rescan` | look for phones and boards now and wait for the result. A scan is made when the daemon starts and when asked (no automatic background scanning); the first one and the ones asked for also search the serial ports for boards ([Boards](#boards)); the scans after a failure, `reload` or `connect` do not. A scan sends a request to every USB device, so none is made while a device has the input |
 | `reload` | read the configuration files again; a device that is open stays open unless how it was opened changed (the mouse buttons, the proxy, its port), and then it is opened again; its mouse, keyboard, media and touch inputs are added or removed without opening it again; no other device is opened |
 | `media KEY [SERIAL\|NAME]` | send a media key (`previous`, `play_pause`, `next`, `brightness_up`, `brightness_down`, `volume_up`, `volume_down`); without a device it goes to the one that has the input, else the last one used |
 | `probe SERIAL\|NAME corner` | send the device's cursor to its top left corner |

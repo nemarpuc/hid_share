@@ -11,6 +11,12 @@ target_compile_definitions(hid_share_keys_tests PRIVATE
   HID_SHARE_DOCS_DIR="${PROJECT_SOURCE_DIR}/docs")
 add_test(NAME hid_share.keys COMMAND hid_share_keys_tests)
 
+# Clone mode: report descriptors, report building and the plugged-in device reader.
+add_executable(hid_share_clone_tests test_clone.cpp)
+target_include_directories(hid_share_clone_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(hid_share_clone_tests PRIVATE hid_share_core)
+add_test(NAME hid_share.clone COMMAND hid_share_clone_tests)
+
 # The adb program, and the settings folder and state file. This one links libaoahid, whose
 # DLL is not next to the test on Windows, so it is built elsewhere only.
 if(NOT WIN32)
