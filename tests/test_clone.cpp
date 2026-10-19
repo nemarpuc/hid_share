@@ -407,6 +407,8 @@ TEST_CASE("a clone that cannot be presented is refused when read") {
                     .empty());
 }
 
+// sysfs file names carry a colon, which Windows does not allow; the reader is Linux only.
+#ifndef _WIN32
 namespace {
 
 namespace fs = std::filesystem;
@@ -536,6 +538,8 @@ TEST_CASE("an interface whose report descriptor cannot be read is left out, with
     fs::remove_all(root);
 }
 
+#endif
+
 TEST_CASE("letting everything go sends the reports that say so") {
     CloneReports r = reports_for(example());
     static_cast<void>(r.key(0x04, true));
@@ -559,6 +563,7 @@ TEST_CASE("with every role off and no vendor interface, nothing is presented") {
     CHECK_FALSE(r.has_media());
 }
 
+#ifndef _WIN32
 TEST_CASE("an endpoint larger than the board's 64 bytes is cut to 64, with a note") {
     const fs::path root = fake_sysfs();
     write_file(root / "5-2" / "descriptors", example_descriptors(512));
@@ -571,3 +576,4 @@ TEST_CASE("an endpoint larger than the board's 64 bytes is cut to 64, with a not
     CHECK(said);
     fs::remove_all(root);
 }
+#endif
