@@ -208,11 +208,11 @@ TEST_CASE("interface numbers keep pinned ones and fill the rest from the lowest"
 TEST_CASE("interface numbers are checked against the board's limits") {
     const std::array<uint32_t, 2> two = {0, 1};
     const std::array<uint32_t, 3> three = {0, 1, 2};
-    const std::array<uint32_t, 1> far = {5};
+    const std::array<uint32_t, 1> beyond = {5};
     CHECK(interface_limit_error(two, 4, 4).empty());
     const std::string nodes = interface_limit_error(three, 2, 4);
     CHECK(nodes.find('2') != std::string::npos);
-    const std::string number = interface_limit_error(far, 4, 4);
+    const std::string number = interface_limit_error(beyond, 4, 4);
     CHECK(number.find('4') != std::string::npos);
     CHECK(number.find('5') != std::string::npos);
 }
