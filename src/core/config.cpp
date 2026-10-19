@@ -1352,7 +1352,7 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
                 if (!device.clone)
                     device.clone.emplace();
             }
-            else if (const auto* at = std::find(node_section_names.begin(),
+            else if (const auto at = std::find(node_section_names.begin(),
                                                 node_section_names.end(), name);
                      at != node_section_names.end()) {
                 section = Section::usb_node;
