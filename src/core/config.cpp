@@ -500,7 +500,9 @@ bool to_node_number(const std::string_view value, const unsigned low, const unsi
 
 bool to_node_size(const std::string_view value, const bool zero_allowed,
                   std::optional<uint32_t>& out) noexcept {
-    return to_node_number(value, zero_allowed ? 0 : 1, 64, out);
+    // The full range libmimhid's descriptors take; a board takes only what its chip holds
+    // and refuses more, at open.
+    return to_node_number(value, zero_allowed ? 0 : 1, 1024, out);
 }
 
 bool set_node_usb(NodeUsb& n, const std::string_view key, const std::string_view value) {

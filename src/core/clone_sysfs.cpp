@@ -13,7 +13,9 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr uint32_t board_answers_feature_bytes = 32;
+// The most any board holds: an endpoint packet of a high-speed chip. A board with less says so
+// when the clone is presented.
+constexpr uint32_t board_endpoint_bytes = 1024;
 
 bool slurp(const fs::path& path, std::vector<uint8_t>& out) {
     std::ifstream in(path, std::ios::binary);
@@ -69,9 +71,6 @@ bool report_descriptor_of(const fs::path& interface_dir, std::vector<uint8_t>& o
     }
     return false;
 }
-
-// The board's endpoints hold up to 64 bytes; any size to that is taken as it is.
-constexpr uint32_t board_endpoint_bytes = 64;
 
 std::string number_of(const CloneInterface& itf) { return std::to_string(itf.number); }
 
@@ -233,12 +232,6 @@ std::string read_clone_device(const CloneSource& source, const fs::path& root, C
             vendor = vendor && c.usage_page >= 0xFF00;
         if (vendor)
             out.notes.push_back(name + " is vendor defined: it is presented, but nothing answers it");
-        for (const HidReportSize& r : parsed.reports)
-            if (r.feature && (r.bits + 7) / 8 > board_answers_feature_bytes)
-                out.notes.push_back(name + ": a Feature report of " +
-                                    std::to_string((r.bits + 7) / 8) +
-                                    " bytes cannot be answered (the board answers up to " +
-                                    std::to_string(board_answers_feature_bytes) + ")");
         out.interfaces.push_back(std::move(itf));
     }
     if (out.interfaces.empty())

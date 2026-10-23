@@ -18,9 +18,9 @@ using K = KeyKind;
      "at most 31 characters", "", "", "The interface string of the " node "; empty: none."},    \
     {S::device, section, "poll_interval_ms", "Board USB interfaces", K::integer, "1..255",      \
      "ms", "", "How often the target polls the " node "; empty takes the ordinary interval."},   \
-    {S::device, section, "ep_in_size", "Board USB interfaces", K::integer, "1..64", "B",         \
+    {S::device, section, "ep_in_size", "Board USB interfaces", K::integer, "1..1024", "B",       \
      "", "Size of the " node "'s IN endpoint; empty takes the ordinary size."},                 \
-    {S::device, section, "ep_out_size", "Board USB interfaces", K::integer, "0..64",           \
+    {S::device, section, "ep_out_size", "Board USB interfaces", K::integer, "0..1024",          \
      "B", "", "Size of the " node "'s OUT endpoint, 0 for none; empty takes the ordinary one."},\
     {S::device, section, "bcd_hid", "Board USB interfaces", K::text, "0x0001..0xFFFF", "", "",  \
      "The HID release number of the " node "; empty announces the ordinary one."},              \

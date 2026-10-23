@@ -2,6 +2,11 @@
 
 ## 0.4.0
 
+- Boards run libmimhid 1.3.3 (protocol 6). A clone keeps the device's endpoint sizes (1 to
+  the board's chip's packet size, 64 at full speed and 1024 at high speed) and the board
+  answers a Feature report up to its `max_feature_bytes` (1024), so the Apex's 644-byte
+  report is answered; a larger one is declared and left silent. Needs the 1.3.3 firmware on the board.
+
 - Clone mode (a board only): the Connection tab can present a USB device plugged into this
   computer (a keyboard, a mouse) as the board's own. Its ids, strings, power values and every
   HID interface (number, polling interval, endpoint sizes, boot protocol, `bcdHID`, report
@@ -10,9 +15,9 @@
   descriptors the other computer sees, and the input goes into the device's own reports
   (a 6-key array or an NKRO bitmap, the Consumer and mouse collections, a battery level when
   the device has one). Only the looks are copied: vendor interfaces are presented but silent,
-  a Feature report above 32 bytes is declared but cannot be answered, an endpoint
-  size is kept as it is (any 1 to 64 bytes; larger becomes 64), and touch mode is not available. The status gains
-  `clone` and `clone_notes`.
+  a Feature report above the board's `max_feature_bytes` is declared but cannot be answered,
+  an endpoint size is kept as it is and cut to the board's chip's packet size, and touch mode
+  is not available. The status gains `clone` and `clone_notes`.
 - Touch mode is a beta: `[daemon] beta = true` shows a Beta tab (touch mode, the real size,
   rotation, tap and swipe settings, the descriptor values) in the settings window and
   takes them off the other tabs. The setting only hides the tab; a device with touch on

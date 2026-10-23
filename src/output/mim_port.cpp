@@ -432,6 +432,11 @@ class MimPort final : public Port {
         mimhid_device_info info{};
         if (!ok(mimhid_device_board_info(device_, &info)))
             return false;
+        mimhid_board_limits limits{};
+        limits.struct_size = static_cast<uint32_t>(sizeof(limits));
+        if (!ok(mimhid_device_limits(device_, &limits)))
+            return false;
+        feature_limit_ = limits.max_feature_bytes;
         const std::vector<CloneReports::Node>& nodes = built.nodes();
         size_t bytes = 0;
         for (const CloneReports::Node& each : nodes)
@@ -454,20 +459,26 @@ class MimPort final : public Port {
             return false;
         for (size_t i = 0; i < nodes.size(); ++i) {
             const CloneInterface& itf = shape.device.interfaces[nodes[i].source];
-            mimhid_node_options node{};
-            node.struct_size = static_cast<uint32_t>(sizeof(node));
+            mimhid_node_config node{};
+            mimhid_node_config_init(&node);
             // The board numbers its interfaces without gaps, so the number is the place
             // among those presented.
-            node.interface_number = static_cast<uint32_t>(i);
-            node.poll_interval_ms = itf.interval_ms;
-            node.ep_in_size = itf.ep_in_size;
-            node.ep_out_size = itf.ep_out_size;
-            node.boot_protocol = MIMHID_BOOT_NONE;
-            if (itf.boot_subclass == 1 && (itf.boot_protocol == 1 || itf.boot_protocol == 2))
-                node.boot_protocol = itf.boot_protocol;
-            node.bcd_hid = itf.bcd_hid;
-            node.country_code = itf.country_code;
-            node.interface_name = itf.name.empty() ? nullptr : itf.name.c_str();
+            node.iface.number = static_cast<uint8_t>(i);
+            node.iface.class_code = 3;
+            node.iface.subclass = itf.boot_subclass;
+            node.iface.protocol = itf.boot_protocol;
+            node.ep_in.address = static_cast<uint8_t>(0x81 + i);
+            node.ep_in.poll_interval_ms = static_cast<uint8_t>(itf.interval_ms != 0 ? itf.interval_ms : 1U);
+            // The board's endpoints hold what its chip does (64 bytes at full speed).
+            node.ep_in.max_packet_size = static_cast<uint16_t>(std::min(itf.ep_in_size, limits.max_endpoint_bytes));
+            if (node.ep_in.max_packet_size == 0)
+                node.ep_in.max_packet_size = 64U;
+            node.ep_out.address = itf.ep_out_size > 0 ? static_cast<uint8_t>(0x01 + i) : 0U;
+            node.ep_out.max_packet_size = static_cast<uint16_t>(std::min(itf.ep_out_size, limits.max_endpoint_bytes));
+            node.ep_out.poll_interval_ms = node.ep_out.max_packet_size > 0 ? node.ep_in.poll_interval_ms : 0U;
+            node.iface.bcd_hid = itf.bcd_hid != 0 ? itf.bcd_hid : 0x0111;
+            node.iface.country_code = itf.country_code;
+            node.iface.name = itf.name.empty() ? nullptr : itf.name.c_str();
             mimhid_node* opened = nullptr;
             if (!ok(mimhid_node_open_raw(device_, nodes[i].descriptor.data(),
                                          nodes[i].descriptor.size(), &node, &opened)))
@@ -558,11 +569,11 @@ class MimPort final : public Port {
     }
 
     // One report of the clone: an Input report goes out as it is; a Feature report is what
-    // the board answers a read with, which it holds up to 32 bytes of.
+    // the board answers a read with, which it holds up to its max_feature_bytes of.
     [[nodiscard]] bool send(const CloneOut& out) {
         mimhid_node* node = clone_nodes_[out.node];
         if (out.feature) {
-            if (out.bytes.size() > 32)
+            if (out.bytes.size() > feature_limit_)
                 return true;
             return ok(mimhid_node_set_feature_response(node, out.report_id, out.bytes.data(),
                                                        out.bytes.size()));
@@ -627,17 +638,22 @@ class MimPort final : public Port {
         }
         if (!ok(result))
             return false;
-        mimhid_node_options node{};
-        node.struct_size = static_cast<uint32_t>(sizeof(node));
-        node.interface_number = interface;
+        mimhid_node_config node{};
+        mimhid_node_config_init(&node);
+        node.iface.number = static_cast<uint8_t>(interface);
+        node.iface.class_code = 3;
+        node.iface.subclass = 0;
+        node.iface.protocol = 0;
+        node.ep_in.address = static_cast<uint8_t>(0x81 + interface);
         const NodeUsb& usb = options.node_usb[kind];
-        node.poll_interval_ms = usb.poll_interval_ms.value_or(1U);
-        node.ep_in_size = usb.ep_in_size.value_or(64U);
-        node.ep_out_size = usb.ep_out_size.value_or(0U);
-        node.boot_protocol = MIMHID_BOOT_NONE;
-        node.bcd_hid = usb.bcd_hid ? static_cast<uint16_t>(*usb.bcd_hid) : hid_bcd;
-        node.country_code = static_cast<uint8_t>(usb.country_code.value_or(0U));
-        node.interface_name = usb.interface_name.empty() ? nullptr : usb.interface_name.c_str();
+        node.ep_in.poll_interval_ms = static_cast<uint8_t>(usb.poll_interval_ms.value_or(1U));
+        node.ep_in.max_packet_size = static_cast<uint16_t>(usb.ep_in_size.value_or(64U));
+        node.ep_out.max_packet_size = static_cast<uint16_t>(usb.ep_out_size.value_or(0U));
+        node.ep_out.address = node.ep_out.max_packet_size > 0 ? static_cast<uint8_t>(0x01 + interface) : 0U;
+        node.ep_out.poll_interval_ms = node.ep_out.max_packet_size > 0 ? node.ep_in.poll_interval_ms : 0U;
+        node.iface.bcd_hid = usb.bcd_hid ? static_cast<uint16_t>(*usb.bcd_hid) : hid_bcd;
+        node.iface.country_code = static_cast<uint8_t>(usb.country_code.value_or(0U));
+        node.iface.name = usb.interface_name.empty() ? nullptr : usb.interface_name.c_str();
         result = mimhid_node_open(device_, spec, &node, &nodes_[kind]);
         // The Node keeps its own reference to the Spec.
         mimhid_spec_release(spec);
@@ -663,6 +679,7 @@ class MimPort final : public Port {
     CloneRoles clone_roles_;
     CloneReports reports_;
     std::vector<mimhid_node*> clone_nodes_;
+    size_t feature_limit_{};
     uint32_t battery_{};
     // What has been said since the last flush.
     int64_t move_x_{};
@@ -732,39 +749,47 @@ class MimBackend final : public Backend {
         }
         const MimOptions& mim = options.mim;
 
-        mimhid_device_options device{};
-        device.struct_size = static_cast<uint32_t>(sizeof(device));
-        device.baud_rate = mim.baud;
-        device.control_timeout_ms = link_timeout_ms;
-        device.send_timeout_ms = link_timeout_ms;
-        device.reconnect_timeout_ms = reconnect_timeout_ms;
+        mimhid_device_config device{};
+        mimhid_device_config_init(&device);
+        device.transport.baud_rate = mim.baud;
+        device.transport.control_timeout_ms = link_timeout_ms;
+        device.transport.send_timeout_ms = link_timeout_ms;
+        device.transport.reconnect_timeout_ms = reconnect_timeout_ms;
         // Zero here is the board's own limit.
-        device.maximum_report_bytes = 0U;
-        device.close_drain_timeout_ms = close_drain_timeout_ms;
+        device.transport.maximum_report_bytes = 0U;
+        device.transport.close_drain_timeout_ms = close_drain_timeout_ms;
         // The Linux HID parser limits listed in libaoahid's docs/LIMITS.md.
-        device.linux_descriptor_policy_bytes = descriptor_policy_bytes;
-        device.linux_hid_fields_per_report_policy = 256U;
-        device.linux_hid_global_stack_depth_policy = 4U;
-        device.linux_hid_usages_policy = 12288U;
-        device.linux_hid_report_data_policy_bits = 65528U;
-        device.linux_hid_report_size_policy_bits = 256U;
+        device.transport.linux_descriptor_policy_bytes = descriptor_policy_bytes;
+        device.transport.linux_hid_fields_per_report_policy = 256U;
+        device.transport.linux_hid_global_stack_depth_policy = 4U;
+        device.transport.linux_hid_usages_policy = 12288U;
+        device.transport.linux_hid_report_data_policy_bits = 65528U;
+        device.transport.linux_hid_report_size_policy_bits = 256U;
         // The Nodes are fixed and range-checked by the profile factories.
-        device.validate_reports = 0U;
+        device.transport.validate_reports = 0U;
         // The board detaches from its target when this program closes it.
-        device.keep_attached = 0U;
-        device.vendor_id = mim.vendor_id;
-        device.product_id = mim.product_id;
-        device.bcd_device = mim.bcd_device != 0 ? mim.bcd_device : usb_bcd_device;
-        device.language_id = mim.language_id != 0 ? mim.language_id : usb_language_id;
-        device.manufacturer = mim.manufacturer.c_str();
-        device.product = mim.product.c_str();
-        device.serial = mim.serial.empty() ? nullptr : mim.serial.c_str();
-        device.configuration = mim.configuration.empty() ? nullptr : mim.configuration.c_str();
-        device.serial_from_chip_id = mim.serial_from_chip_id ? 1U : 0U;
-        device.self_powered = mim.self_powered ? 1U : 0U;
-        device.remote_wakeup = mim.remote_wakeup ? 1U : 0U;
-        device.max_power_ma = mim.max_power_ma != 0 ? mim.max_power_ma : usb_max_power_ma;
-        device.log_level = MIMHID_LOG_DISABLED;
+        device.transport.keep_attached = 0U;
+        device.usb_device.vendor_id = mim.vendor_id;
+        device.usb_device.product_id = mim.product_id;
+        device.usb_device.bcd_device = mim.bcd_device != 0 ? mim.bcd_device : usb_bcd_device;
+        device.usb_device.language_id = mim.language_id != 0 ? mim.language_id : usb_language_id;
+        device.usb_device.manufacturer = mim.manufacturer.c_str();
+        device.usb_device.product = mim.product.c_str();
+        device.usb_device.serial = mim.serial.empty() ? nullptr : mim.serial.c_str();
+        device.usb_config.string = mim.configuration.empty() ? nullptr : mim.configuration.c_str();
+        device.usb_device.serial_from_chip_id = mim.serial_from_chip_id ? 1U : 0U;
+        device.usb_device.device_class = 0;
+        device.usb_device.device_subclass = 0;
+        device.usb_device.device_protocol = 0;
+        device.usb_device.bcd_usb = 0x0200;
+        device.usb_device.ep0_max_packet_size = 64;
+        device.usb_config.configuration_value = 1;
+        const uint8_t self_pw = mim.self_powered ? 0x40 : 0;
+        const uint8_t rem_wk = mim.remote_wakeup ? 0x20 : 0;
+        device.usb_config.bm_attributes = static_cast<uint8_t>(0x80 | self_pw | rem_wk);
+        const uint32_t pwr = mim.max_power_ma != 0 ? mim.max_power_ma : usb_max_power_ma;
+        device.usb_config.bmax_power = static_cast<uint8_t>(pwr / 2);
+        device.transport.log_level = MIMHID_LOG_DISABLED;
 
         mimhid_device* opened = nullptr;
         const mimhid_result result = mimhid_device_open(path.c_str(), &device, &opened);

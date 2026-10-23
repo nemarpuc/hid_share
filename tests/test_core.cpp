@@ -263,11 +263,12 @@ TEST_CASE("a Node's USB interface values are read, written and checked") {
     };
     CHECK(refused("usb.mouse", "poll_interval_ms = 0"));
     CHECK(refused("usb.mouse", "poll_interval_ms = 256"));
-    CHECK(refused("usb.mouse", "ep_in_size = 65"));
     CHECK(refused("usb.mouse", "ep_in_size = 0"));
+    CHECK(refused("usb.mouse", "ep_in_size = 1025"));
+    CHECK_FALSE(refused("usb.mouse", "ep_in_size = 1024"));
     CHECK_FALSE(refused("usb.mouse", "ep_in_size = 6"));
     CHECK_FALSE(refused("usb.mouse", "ep_out_size = 5"));
-    CHECK(refused("usb.mouse", "ep_out_size = 65"));
+    CHECK(refused("usb.mouse", "ep_out_size = 1025"));
     CHECK(refused("usb.mouse", "report_id = 0"));
     CHECK(refused("usb.mouse", "report_id = 256"));
     CHECK(refused("usb.mouse", "boot_protocol = 1"));

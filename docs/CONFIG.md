@@ -349,7 +349,7 @@ need no `[usb]` values, and the same key means the same in all four.
 | `interface_number` | empty | 0 to 255 and below the board's interface count; empty gives the lowest numbers no pinned Node uses, in the order mouse, keyboard, media, touchscreen. Nodes with the same number share one interface (one HID interface with a Report ID for each), and then every one of them must have its own `report_id`; without that the board is not opened and the status says which |
 | `interface_name` | empty | the interface string, printable ASCII, at most 31 characters; empty announces none |
 | `poll_interval_ms` | empty | how often the target polls, 1 to 255 ms; empty takes the ordinary interval |
-| `ep_in_size`, `ep_out_size` | empty | endpoint sizes in bytes, any value from 1 to 64 as given, not rounded (the OUT endpoint also 0 for none); empty takes the ordinary sizes |
+| `ep_in_size`, `ep_out_size` | empty | endpoint sizes in bytes, any value from 1 to 1024 as given, not rounded (the OUT endpoint also 0 for none); empty takes the ordinary sizes. A board takes only what its chip holds (64 at full speed, 1024 at high speed) and refuses more |
 | `bcd_hid` | empty | the HID release number, 0x0001 to 0xFFFF |
 | `country_code` | empty | 0 to 255 |
 | `report_id` | empty | 1 to 255; empty gives the report no Report ID. Nodes that share an interface must all have one, all different; Nodes on interfaces of their own may use any, the same too. Nothing is numbered for you |
@@ -376,8 +376,10 @@ part that is off is cut out of the report descriptors the other computer sees, a
 interface left with nothing is not presented. The input goes into the device's own reports:
 one keyboard, one mouse and one media collection are fed, and a device without one has
 nothing for that input. A battery is reported only when the device has one. What no
-interface of the board can answer (a vendor interface, a Feature report above 32 bytes) is
-presented but silent. The ids are another maker's: use this for your own testing, not on a
+interface of the board can answer (a vendor interface, a Feature report above the board's
+`max_feature_bytes`, 1024 on the 1.3.3 firmware) is presented but silent. An
+endpoint packet larger than the board's chip holds (64 bytes at full speed, 1024 at high
+speed) is cut to it. The ids are another maker's: use this for your own testing, not on a
 device that is redistributed or sold.
 
 ### `[touch_hid]` (the touchscreen's descriptor)

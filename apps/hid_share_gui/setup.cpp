@@ -440,7 +440,7 @@ void draw_setup(App& app, DeviceConfig& device) {
         explain("Plug the board in and press the refresh icon above the list: every serial port\n"
                 "is asked whether a board answers. If it does not appear, check the TX, RX and\n"
                 "ground wires, the board's power, that you may open the port (group uucp or\n"
-                "dialout), and that the board runs the libmimhid 1.0.2 firmware.");
+                "dialout), and that the board runs the libmimhid 1.3.3 firmware.");
     } else {
         explain("Plug the phone in and press the refresh icon above the list.");
     }

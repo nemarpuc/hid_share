@@ -517,7 +517,7 @@ TEST_CASE("a device is read whole from the kernel's files") {
         return false;
     };
     CHECK_FALSE(noted("endpoint"));
-    CHECK(noted("interface 1: a Feature report of 644 bytes"));
+    CHECK_FALSE(noted("Feature report")); // the board decides what it can answer
     CHECK(noted("interface 1 is vendor defined"));
     CHECK(noted("interface 4 is vendor defined"));
     CHECK_FALSE(noted("interface 0 is vendor"));
@@ -564,15 +564,15 @@ TEST_CASE("with every role off and no vendor interface, nothing is presented") {
 }
 
 #ifndef _WIN32
-TEST_CASE("an endpoint larger than the board's 64 bytes is cut to 64, with a note") {
+TEST_CASE("an endpoint larger than any board's 1024 bytes is cut to 1024, with a note") {
     const fs::path root = fake_sysfs();
-    write_file(root / "5-2" / "descriptors", example_descriptors(512));
+    write_file(root / "5-2" / "descriptors", example_descriptors(1500));
     CloneDevice d;
     REQUIRE(read_clone_device(list_clone_sources(root)[0], root, d).empty());
-    CHECK(d.interfaces[4].ep_in_size == 64);
+    CHECK(d.interfaces[4].ep_in_size == 1024);
     bool said = false;
     for (const std::string& n : d.notes)
-        said = said || n.find("interface 4: the endpoint of 512 bytes becomes 64") != std::string::npos;
+        said = said || n.find("interface 4: the endpoint of 1500 bytes becomes 1024") != std::string::npos;
     CHECK(said);
     fs::remove_all(root);
 }

@@ -71,7 +71,7 @@ itself: it only lists the ones that have a file, and what it found.
 
 **With a board (MIM).** Flash the board and wire its serial port as
 [libmimhid's quick start](https://github.com/nemarpuc/libmimhid/blob/main/docs/QUICKSTART.md)
-says (libmimhid 1.0.2 firmware), and give your user access to the serial port.
+says (libmimhid 1.3.3 firmware), and give your user access to the serial port.
 Then, in the settings window (`hid_share_gui`):
 
 1. Start the daemon (the button at the bottom left). As it starts, and again when you
@@ -296,7 +296,7 @@ shares a screen edge with your desktop's own edge features:
 
 ## Building
 
-Requires CMake 3.22, a C++20 compiler, libaoahid 1.0 or newer and libmimhid 1.0.2 or newer. On Linux each
+Requires CMake 3.22, a C++20 compiler, libaoahid 1.0 or newer and libmimhid 1.3.3 or newer. On Linux each
 backend is built when its libraries are found:
 
 | Backend | Packages (Debian names) |

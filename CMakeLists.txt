@@ -45,7 +45,7 @@ endfunction()
 # aoahid_adb_proxy needs.
 find_package(aoahid 1.0.0 CONFIG REQUIRED)
 # The board (MIM) side.
-find_package(mimhid 1.0.2 CONFIG REQUIRED)
+find_package(mimhid 1.3.3 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 add_subdirectory(src)
