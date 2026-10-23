@@ -2,6 +2,8 @@
 
 ## 0.4.0
 
+- Closing the settings window stops a daemon that the window started. A daemon started elsewhere keeps running, and `hid_share quit` still stops any daemon.
+
 - Boards run libmimhid 1.3.3 (protocol 6). A clone keeps the device's endpoint sizes (1 to
   the board's chip's packet size, 64 at full speed and 1024 at high speed) and the board
   answers a Feature report up to its `max_feature_bytes` (1024), so the Apex's 644-byte

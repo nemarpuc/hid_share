@@ -56,6 +56,8 @@ struct App {
     std::vector<hids::CloneSource> clone_sources;
     double clone_read_at{-10.0};
     bool daemon_running{};
+    // The daemon was started from this window; closing the window stops it.
+    bool started_daemon{};
     double next_poll{};
     // The input was sent to a device to try it, and when it is taken back.
     double try_release_at{};

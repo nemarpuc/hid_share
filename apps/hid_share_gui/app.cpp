@@ -200,8 +200,9 @@ void start_daemon(App& app) {
 #else
     const std::filesystem::path program = app.program_dir / "hid_share_daemon";
 #endif
-    // The daemon outlives this window and writes its own log.
+    // The daemon writes its own log; it is stopped when this window closes.
     app.failed = app.program_dir.empty() || !spawn_detached({program.string()});
+    app.started_daemon = app.started_daemon || !app.failed;
     app.message = app.failed ? "Could not start " + program.string() : "Starting the daemon...";
     app.next_poll = ImGui::GetTime() + 1.0;
 }

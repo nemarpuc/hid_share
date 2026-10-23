@@ -86,6 +86,9 @@ int main() {
         glfwSwapBuffers(window);
     }
 
+    if (app.started_daemon)
+        gui::command(app, "quit");
+
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
