@@ -53,6 +53,16 @@ mimhid_integer_field field(const int32_t minimum, const int32_t maximum,
     return value;
 }
 
+// The waits of a call that re-enumerates the board: the link's answer time and the re-attach.
+mimhid_commit_timeouts commit_timeouts() noexcept {
+    mimhid_commit_timeouts timeouts{};
+    mimhid_commit_timeouts_init(&timeouts);
+    timeouts.control_timeout_ms = link_timeout_ms;
+    timeouts.reconnect_timeout_ms = reconnect_timeout_ms;
+    return timeouts;
+}
+const mimhid_commit_timeouts commit_waits = commit_timeouts();
+
 // The Report ID of a Node: none unless the user gave one.
 mimhid_report_id_option report_id_of(const NodeUsb& usb) noexcept {
     mimhid_report_id_option id{};
@@ -313,7 +323,7 @@ class MimPort final : public Port {
         // the wire instead of running one after another.
         for (size_t kind = 0; kind < node_kinds; ++kind) {
             if ((nodes & node_bit(static_cast<NodeKind>(kind))) != 0 &&
-                !ok(mimhid_node_submit(nodes_[kind])))
+                !ok(mimhid_node_submit(nodes_[kind], link_timeout_ms)))
                 return false;
         }
         for (size_t kind = 0; kind < node_kinds; ++kind) {
@@ -393,7 +403,7 @@ class MimPort final : public Port {
             if (!open_node(static_cast<NodeKind>(kind), numbers[kind], options))
                 return false;
         }
-        if (!ok(mimhid_device_batch_end(device_)))
+        if (!ok(mimhid_device_batch_end(device_, &commit_waits)))
             return false;
         if (wanted != 0 && !ok(mimhid_device_wait_ready(device_, ready_timeout_ms)))
             return false;
@@ -481,11 +491,12 @@ class MimPort final : public Port {
             node.iface.name = itf.name.empty() ? nullptr : itf.name.c_str();
             mimhid_node* opened = nullptr;
             if (!ok(mimhid_node_open_raw(device_, nodes[i].descriptor.data(),
-                                         nodes[i].descriptor.size(), &node, &opened)))
+                                         nodes[i].descriptor.size(), &node, &commit_waits,
+                                         &opened)))
                 return false;
             clone_nodes_.push_back(opened);
         }
-        if (!ok(mimhid_device_batch_end(device_)))
+        if (!ok(mimhid_device_batch_end(device_, &commit_waits)))
             return false;
         if (!nodes.empty() && !ok(mimhid_device_wait_ready(device_, ready_timeout_ms)))
             return false;
@@ -526,7 +537,8 @@ class MimPort final : public Port {
                 static_cast<void>(send(out));
         // The first close consumes the Device and its Nodes for every result.
         if (device_ != nullptr)
-            static_cast<void>(mimhid_device_close(device_));
+            static_cast<void>(
+                mimhid_device_close(device_, link_timeout_ms, close_drain_timeout_ms));
         device_ = nullptr;
         nodes_ = {};
         clone_nodes_.clear();
@@ -552,14 +564,14 @@ class MimPort final : public Port {
         for (mimhid_node*& node : nodes_) {
             if (node == nullptr)
                 continue;
-            if (!ok(mimhid_node_close(node)))
+            if (!ok(mimhid_node_close(node, &commit_waits, close_drain_timeout_ms)))
                 return false;
             node = nullptr;
         }
         for (mimhid_node*& node : clone_nodes_) {
             if (node == nullptr)
                 continue;
-            if (!ok(mimhid_node_close(node)))
+            if (!ok(mimhid_node_close(node, &commit_waits, close_drain_timeout_ms)))
                 return false;
             node = nullptr;
         }
@@ -576,9 +588,9 @@ class MimPort final : public Port {
             if (out.bytes.size() > feature_limit_)
                 return true;
             return ok(mimhid_node_set_feature_response(node, out.report_id, out.bytes.data(),
-                                                       out.bytes.size()));
+                                                       out.bytes.size(), link_timeout_ms));
         }
-        return ok(mimhid_report_send(node, out.bytes.data(), out.bytes.size()));
+        return ok(mimhid_report_send(node, out.bytes.data(), out.bytes.size(), link_timeout_ms));
     }
 
     [[nodiscard]] bool send_battery() {
@@ -654,7 +666,7 @@ class MimPort final : public Port {
         node.iface.bcd_hid = usb.bcd_hid ? static_cast<uint16_t>(*usb.bcd_hid) : hid_bcd;
         node.iface.country_code = static_cast<uint8_t>(usb.country_code.value_or(0U));
         node.iface.name = usb.interface_name.empty() ? nullptr : usb.interface_name.c_str();
-        result = mimhid_node_open(device_, spec, &node, &nodes_[kind]);
+        result = mimhid_node_open(device_, spec, &node, &commit_waits, &nodes_[kind]);
         // The Node keeps its own reference to the Spec.
         mimhid_spec_release(spec);
         if (!ok(result)) {
@@ -752,12 +764,8 @@ class MimBackend final : public Backend {
         mimhid_device_config device{};
         mimhid_device_config_init(&device);
         device.transport.baud_rate = mim.baud;
-        device.transport.control_timeout_ms = link_timeout_ms;
-        device.transport.send_timeout_ms = link_timeout_ms;
-        device.transport.reconnect_timeout_ms = reconnect_timeout_ms;
-        // Zero here is the board's own limit.
-        device.transport.maximum_report_bytes = 0U;
-        device.transport.close_drain_timeout_ms = close_drain_timeout_ms;
+        // The largest report libmimhid builds; the board refuses any it cannot take.
+        device.transport.maximum_report_bytes = MIMHID_HOST_MAX_REPORT_BYTES;
         // The Linux HID parser limits listed in libaoahid's docs/LIMITS.md.
         device.transport.linux_descriptor_policy_bytes = descriptor_policy_bytes;
         device.transport.linux_hid_fields_per_report_policy = 256U;

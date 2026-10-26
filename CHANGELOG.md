@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+- Builds against libmimhid 1.3.6. Its calls take their timeouts as arguments, so the serial
+  link passes the same values as before (500 ms for each answer and report, 3000 ms for the
+  re-attach, 1000 ms for the close drain); the device config's maximum report size is the
+  library's limit (1024). The release and CI pins move to 1.3.6. Not yet run on a board.
+
 ## 0.4.0
 
 - Closing the settings window stops a daemon that the window started. A daemon started elsewhere keeps running, and `hid_share quit` still stops any daemon.

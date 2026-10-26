@@ -21,7 +21,7 @@ env:
   AOAHID_TAG: v1.0.1
   MIMHID_REPOSITORY: nemarpuc/libmimhid
   # Changing the tag means changing the hashes in the matrix below too.
-  MIMHID_TAG: v1.3.3
+  MIMHID_TAG: v1.3.6
 
 jobs:
   build:
@@ -34,25 +34,25 @@ jobs:
             aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
             aoahid_sha256: b418b987f8bcff373381432db38807e079052f3a5924717e7b57667f9fe7709b
             mimhid_asset: libmimhid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
-            mimhid_sha256: 91cd3ba0076ebe769b192f323a02409c7617dcda277b15a0f0d432e89d686d8e
+            mimhid_sha256: ea53bae660bd657ef3c48ed4e5d1e7963a1533e31058a3d5b3b9cd25ae2fba92
           - os: windows-2022
             platform: windows
             aoahid_asset: libaoahid-*-windows-x86_64-shared.zip
             aoahid_sha256: fd50e681064d54dd40def89f0d47990204d865cc41193c11c4a9323f140f9c50
             mimhid_asset: libmimhid-*-windows-x86_64-shared.zip
-            mimhid_sha256: fbc255d0f5169c050fc160058969ec5ca76ef828530ff3ea3ba2b8d9090e5507
+            mimhid_sha256: 7aa56f474f48dc50b6b90df4cd68caae0ef095f12f2619fd876e95457ec48380
           - os: macos-15
             platform: macos
             aoahid_asset: libaoahid-*-macos-arm64-shared.tar.gz
             aoahid_sha256: 350040e9e9562e1783fed73e42e4fc7886b48dca6cef5a5b4ffbaf97cfebc9ed
             mimhid_asset: libmimhid-*-macos-arm64-shared.tar.gz
-            mimhid_sha256: 80a2cea0af0e5e6f958f7f5b91bda544d4aed880bd99800814e5a272aa273fae
+            mimhid_sha256: f61d1c03f0f4a4d80143b4371794eb9f0c5ff9e207a0eea8b9c950d319a06765
           - os: macos-15-intel
             platform: macos
             aoahid_asset: libaoahid-*-macos-x86_64-shared.tar.gz
             aoahid_sha256: c9a21027af6c95e3e9ab73a4cc58d268522acc90f4c742ac38af8a201b7fc9de
             mimhid_asset: libmimhid-*-macos-x86_64-shared.tar.gz
-            mimhid_sha256: f9c17c053494e09f6d02b87d49a28a10690c2e68cde1d24cdf45a58906de6d37
+            mimhid_sha256: 2975d7fa91ed4b8ef3c54c13c88e3dfd6d2a1c202743c0bb363c204d4e073d46
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
