@@ -30,28 +30,28 @@ jobs:
             platform: linux
             name: linux-x86_64
             aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
-            aoahid_sha256: b418b987f8bcff373381432db38807e079052f3a5924717e7b57667f9fe7709b
+            aoahid_sha256: 1c539dd023681d4a14cacae0a1951e804dc5d54ebe52a1ec75b3f70525146ac5
             mimhid_asset: libmimhid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
             mimhid_sha256: ea53bae660bd657ef3c48ed4e5d1e7963a1533e31058a3d5b3b9cd25ae2fba92
           - os: windows-2022
             platform: windows
             name: windows-x86_64
             aoahid_asset: libaoahid-*-windows-x86_64-shared.zip
-            aoahid_sha256: fd50e681064d54dd40def89f0d47990204d865cc41193c11c4a9323f140f9c50
+            aoahid_sha256: f8e18c6d52cce710b1083145fd041ff5ca3314cb8116d8343a9a6a6fa759c712
             mimhid_asset: libmimhid-*-windows-x86_64-shared.zip
             mimhid_sha256: 7aa56f474f48dc50b6b90df4cd68caae0ef095f12f2619fd876e95457ec48380
           - os: macos-15
             platform: macos
             name: macos-arm64
             aoahid_asset: libaoahid-*-macos-arm64-shared.tar.gz
-            aoahid_sha256: 350040e9e9562e1783fed73e42e4fc7886b48dca6cef5a5b4ffbaf97cfebc9ed
+            aoahid_sha256: 8284397a50a1665453d7464e875879993de910099571d741e5d3faab63d5de09
             mimhid_asset: libmimhid-*-macos-arm64-shared.tar.gz
             mimhid_sha256: f61d1c03f0f4a4d80143b4371794eb9f0c5ff9e207a0eea8b9c950d319a06765
           - os: macos-15-intel
             platform: macos
             name: macos-x86_64
             aoahid_asset: libaoahid-*-macos-x86_64-shared.tar.gz
-            aoahid_sha256: c9a21027af6c95e3e9ab73a4cc58d268522acc90f4c742ac38af8a201b7fc9de
+            aoahid_sha256: 622a2ff7d3e5780ed9b569e3bf0a20a82c3daec5ff03d5d614ca16c70d0f4265
             mimhid_asset: libmimhid-*-macos-x86_64-shared.tar.gz
             mimhid_sha256: 2975d7fa91ed4b8ef3c54c13c88e3dfd6d2a1c202743c0bb363c204d4e073d46
     runs-on: ${{ matrix.os }}
