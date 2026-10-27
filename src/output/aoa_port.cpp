@@ -11,8 +11,8 @@
 namespace hids {
 namespace {
 
-// Every value below is this application's policy, stated explicitly rather
-// than left to libaoahid's documented fallbacks (docs/API.md there).
+// Every value below is this application's policy, stated explicitly: libaoahid
+// has no defaults, and takes every wait as an argument of the call that waits.
 constexpr uint32_t discover_timeout_ms = 500U;
 constexpr uint32_t control_timeout_ms = 500U;
 constexpr uint32_t send_timeout_ms = 500U;
@@ -36,12 +36,9 @@ constexpr uint16_t media_usages[] = {0x00B5, 0x00B6, 0x00B7, 0x00CD, 0x00E2, 0x0
 aoahid_device_options device_options() noexcept {
     aoahid_device_options options{};
     options.struct_size = static_cast<uint32_t>(sizeof(options));
-    options.control_timeout_ms = control_timeout_ms;
-    options.send_timeout_ms = send_timeout_ms;
     options.descriptor_fragment_bytes = descriptor_policy_bytes;
     options.transfer_pool_slots = pool_slots;
     options.maximum_report_bytes = report_policy_bytes;
-    options.close_drain_timeout_ms = close_drain_timeout_ms;
     // The specs are fixed and range-checked by the profile factories.
     options.validate_reports = 0U;
     options.aoa_descriptor_wire_policy_bytes = descriptor_policy_bytes;
@@ -214,8 +211,8 @@ class AoaPort final : public Port {
     }
     [[nodiscard]] bool touch(const unsigned contact, const bool down, const int32_t x,
                              const int32_t y) override {
-        return ok(aoahid_touchscreen_contact(nodes_[node_touch], contact, down ? 1U : 0U, x, y,
-                                             nullptr));
+        return ok(
+            aoahid_touchscreen_contact(nodes_[node_touch], contact, down ? 1U : 0U, x, y, nullptr));
     }
 
     [[nodiscard]] bool flush(const uint8_t nodes) override {
@@ -223,7 +220,7 @@ class AoaPort final : public Port {
         // the wire instead of running one after another.
         for (size_t kind = 0; kind < node_kinds; ++kind) {
             if ((nodes & node_bit(static_cast<NodeKind>(kind))) != 0 &&
-                !ok(aoahid_node_submit(nodes_[kind])))
+                !ok(aoahid_node_submit(nodes_[kind], send_timeout_ms)))
                 return false;
         }
         for (size_t kind = 0; kind < node_kinds; ++kind) {
@@ -248,7 +245,8 @@ class AoaPort final : public Port {
             if (!wanted) {
                 // Neutral reports first, then the unregister; an error leaves
                 // the Node open.
-                const aoahid_result closed = aoahid_node_close(slot);
+                const aoahid_result closed =
+                    aoahid_node_close(slot, control_timeout_ms, close_drain_timeout_ms);
                 if (closed == AOAHID_OK)
                     slot = nullptr;
                 return closed;
@@ -257,7 +255,7 @@ class AoaPort final : public Port {
             aoahid_result result = create(&spec);
             if (result != AOAHID_OK)
                 return result;
-            result = aoahid_node_open(device_, spec, &node, &slot);
+            result = aoahid_node_open(device_, spec, &node, control_timeout_ms, &slot);
             // The Node keeps its own reference to the Spec.
             aoahid_spec_release(spec);
             if (result != AOAHID_OK) {
@@ -278,7 +276,8 @@ class AoaPort final : public Port {
         if (result == AOAHID_OK && nodes_[node_touch] != nullptr && options.touch &&
             (touch_size_.w != options.touch_size.w || touch_size_.h != options.touch_size.h ||
              !(touch_hid_ == options.touch_hid))) {
-            result = aoahid_node_close(nodes_[node_touch]);
+            result =
+                aoahid_node_close(nodes_[node_touch], control_timeout_ms, close_drain_timeout_ms);
             if (result == AOAHID_OK)
                 nodes_[node_touch] = nullptr;
         }
@@ -300,7 +299,7 @@ class AoaPort final : public Port {
         held = absent = false;
         if (device_ == nullptr || proxy_ != nullptr)
             return proxy_refused;
-        const int result = aoahid_adb_proxy_start(device_, port, &proxy_);
+        const int result = aoahid_adb_proxy_start(device_, port, close_drain_timeout_ms, &proxy_);
         if (result != AOAHID_ADB_PROXY_OK)
             proxy_ = nullptr;
         if (result == AOAHID_ADB_PROXY_ERR_INTERFACE) {
@@ -309,7 +308,7 @@ class AoaPort final : public Port {
             const aoahid_error_detail* detail = aoahid_last_error();
             const int code = detail != nullptr ? detail->code : 0;
             // LIBUSB_ERROR_NOT_SUPPORTED is a driver problem; stopping adb cannot fix it.
-            const bool driver = detail != nullptr && detail->libusb_status == -12;
+            const bool driver = detail != nullptr && detail->transport_status == -12;
             held = !driver && (code == AOAHID_ERR_BUSY || code == AOAHID_ERR_ACCESS);
             absent = !driver && code == AOAHID_ERR_UNSUPPORTED;
         }
@@ -317,7 +316,7 @@ class AoaPort final : public Port {
     }
 
     void stop_proxy() override {
-        aoahid_adb_proxy_stop(proxy_);
+        aoahid_adb_proxy_stop(proxy_, close_drain_timeout_ms);
         proxy_ = nullptr;
     }
 
@@ -326,7 +325,8 @@ class AoaPort final : public Port {
         stop_proxy();
         // The first close consumes the Device and its Nodes for every result.
         if (device_ != nullptr)
-            static_cast<void>(aoahid_device_close(device_));
+            static_cast<void>(
+                aoahid_device_close(device_, control_timeout_ms, close_drain_timeout_ms));
         device_ = nullptr;
         nodes_ = {};
     }
@@ -378,14 +378,16 @@ class AoaBackend final : public Backend {
         // meet its old registrations.
         for (aoahid_context*& context : slot_contexts_) {
             if (context != nullptr)
-                static_cast<void>(aoahid_context_destroy_blocking(context, destroy_timeout_ms));
+                static_cast<void>(aoahid_context_destroy_blocking(
+                    context, control_timeout_ms, close_drain_timeout_ms, destroy_timeout_ms));
             context = nullptr;
         }
         if (discovery_ != nullptr)
             aoahid_discovery_destroy(discovery_);
         discovery_ = nullptr;
         if (scan_context_ != nullptr)
-            static_cast<void>(aoahid_context_destroy_blocking(scan_context_, destroy_timeout_ms));
+            static_cast<void>(aoahid_context_destroy_blocking(
+                scan_context_, control_timeout_ms, close_drain_timeout_ms, destroy_timeout_ms));
         scan_context_ = nullptr;
     }
 

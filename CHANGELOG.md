@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2
+
+- Builds against libaoahid 2.0.0 and aoahid_adb_proxy 4.0.0, which take every wait as an
+  argument of the call that waits. The phone link passes the same values as before (500 ms for
+  a control request and for a report, 1000 ms for the close drain). The release and CI pins
+  move to libaoahid 2.0.0. Not run against a phone.
+
 ## 0.4.1
 
 - Builds against libmimhid 1.3.6. Its calls take their timeouts as arguments, so the serial

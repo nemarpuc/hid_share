@@ -18,7 +18,7 @@ concurrency:
 env:
   AOAHID_REPOSITORY: nemarpuc/libaoahid
   # Changing the tag means changing the hashes in the matrix below too.
-  AOAHID_TAG: v1.0.1
+  AOAHID_TAG: v2.0.0
   MIMHID_REPOSITORY: nemarpuc/libmimhid
   # Changing the tag means changing the hashes in the matrix below too.
   MIMHID_TAG: v1.3.6

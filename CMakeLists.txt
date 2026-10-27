@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(hid_share VERSION 0.4.1 LANGUAGES C CXX)
+project(hid_share VERSION 0.4.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,9 +41,9 @@ function(hid_share_warnings target)
   endif()
 endfunction()
 
-# 1.0.0 is the first libaoahid with the Channel API the vendored
-# aoahid_adb_proxy needs.
-find_package(aoahid 1.0.0 CONFIG REQUIRED)
+# 2.0.0 is the first libaoahid that takes every wait as an argument of the call
+# (the vendored aoahid_adb_proxy 4.0.0 needs it too).
+find_package(aoahid 2.0.0 CONFIG REQUIRED)
 # The board (MIM) side.
 find_package(mimhid 1.3.3 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
