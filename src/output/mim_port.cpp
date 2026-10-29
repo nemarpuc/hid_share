@@ -34,7 +34,6 @@ constexpr uint32_t ready_timeout_ms = 5000U;
 constexpr uint16_t usb_bcd_device = 0x0100;
 constexpr uint16_t usb_language_id = 0x0409;
 constexpr uint32_t usb_max_power_ma = 100U;
-constexpr uint32_t descriptor_policy_bytes = 4096U;
 constexpr uint16_t hid_bcd = 0x0111;
 constexpr uint32_t touch_contacts = 2U;
 constexpr uint32_t touch_bits = 16U;
@@ -470,14 +469,11 @@ class MimPort final : public Port {
         for (size_t i = 0; i < nodes.size(); ++i) {
             const CloneInterface& itf = shape.device.interfaces[nodes[i].source];
             mimhid_node_config node{};
-            mimhid_node_config_init(&node);
             // The board numbers its interfaces without gaps, so the number is the place
             // among those presented.
-            node.iface.number = static_cast<uint8_t>(i);
-            node.iface.class_code = 3;
+            mimhid_node_config_init(&node, static_cast<uint8_t>(i));
             node.iface.subclass = itf.boot_subclass;
             node.iface.protocol = itf.boot_protocol;
-            node.ep_in.address = static_cast<uint8_t>(0x81 + i);
             node.ep_in.poll_interval_ms = static_cast<uint8_t>(itf.interval_ms != 0 ? itf.interval_ms : 1U);
             // The board's endpoints hold what its chip does (64 bytes at full speed).
             node.ep_in.max_packet_size = static_cast<uint16_t>(std::min(itf.ep_in_size, limits.max_endpoint_bytes));
@@ -564,16 +560,22 @@ class MimPort final : public Port {
         for (mimhid_node*& node : nodes_) {
             if (node == nullptr)
                 continue;
-            if (!ok(mimhid_node_close(node, &commit_waits, close_drain_timeout_ms)))
+            const mimhid_result closed = mimhid_node_close(node, &commit_waits, close_drain_timeout_ms);
+            // Every result but these consumed the Node, an error included.
+            if (closed != MIMHID_ERR_PARAM && closed != MIMHID_ERR_UNSET_FIELD)
+                node = nullptr;
+            if (!ok(closed))
                 return false;
-            node = nullptr;
         }
         for (mimhid_node*& node : clone_nodes_) {
             if (node == nullptr)
                 continue;
-            if (!ok(mimhid_node_close(node, &commit_waits, close_drain_timeout_ms)))
+            const mimhid_result closed = mimhid_node_close(node, &commit_waits, close_drain_timeout_ms);
+            // Every result but these consumed the Node, an error included.
+            if (closed != MIMHID_ERR_PARAM && closed != MIMHID_ERR_UNSET_FIELD)
+                node = nullptr;
+            if (!ok(closed))
                 return false;
-            node = nullptr;
         }
         clone_nodes_.clear();
         clone_.reset();
@@ -651,12 +653,7 @@ class MimPort final : public Port {
         if (!ok(result))
             return false;
         mimhid_node_config node{};
-        mimhid_node_config_init(&node);
-        node.iface.number = static_cast<uint8_t>(interface);
-        node.iface.class_code = 3;
-        node.iface.subclass = 0;
-        node.iface.protocol = 0;
-        node.ep_in.address = static_cast<uint8_t>(0x81 + interface);
+        mimhid_node_config_init(&node, static_cast<uint8_t>(interface));
         const NodeUsb& usb = options.node_usb[kind];
         node.ep_in.poll_interval_ms = static_cast<uint8_t>(usb.poll_interval_ms.value_or(1U));
         node.ep_in.max_packet_size = static_cast<uint16_t>(usb.ep_in_size.value_or(64U));
@@ -766,13 +763,7 @@ class MimBackend final : public Backend {
         device.transport.baud_rate = mim.baud;
         // The largest report libmimhid builds; the board refuses any it cannot take.
         device.transport.maximum_report_bytes = MIMHID_HOST_MAX_REPORT_BYTES;
-        // The Linux HID parser limits listed in libaoahid's docs/LIMITS.md.
-        device.transport.linux_descriptor_policy_bytes = descriptor_policy_bytes;
-        device.transport.linux_hid_fields_per_report_policy = 256U;
-        device.transport.linux_hid_global_stack_depth_policy = 4U;
-        device.transport.linux_hid_usages_policy = 12288U;
-        device.transport.linux_hid_report_data_policy_bits = 65528U;
-        device.transport.linux_hid_report_size_policy_bits = 256U;
+        // transport.linux_hid keeps the Linux HID parser limits of the initializer.
         // The Nodes are fixed and range-checked by the profile factories.
         device.transport.validate_reports = 0U;
         // The board detaches from its target when this program closes it.

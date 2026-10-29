@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- Builds against libmimhid 2.0.0 and libaoahid 2.0.0 as re-released on 2026-10-29. Both Devices
+  start from the libraries' initializers, which hold the same Linux HID limits as before, and each
+  board Node from `mimhid_node_config_init(&config, interface)`. A Node whose close fails is now
+  dropped, since both libraries consume it with every result but a refused argument (and
+  `AOAHID_CLOSE_PENDING`). The release and CI pins move to the new assets. Not run against a
+  board or a phone.
+
 ## 0.4.2
 
 - Builds against libaoahid 2.0.0 and aoahid_adb_proxy 4.0.0, which take every wait as an

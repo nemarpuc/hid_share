@@ -16,8 +16,6 @@ namespace {
 constexpr uint32_t discover_timeout_ms = 500U;
 constexpr uint32_t control_timeout_ms = 500U;
 constexpr uint32_t send_timeout_ms = 500U;
-constexpr uint32_t descriptor_policy_bytes = 4096U;
-constexpr uint32_t report_policy_bytes = 1024U;
 constexpr uint32_t pool_slots = 8U;
 constexpr uint32_t close_drain_timeout_ms = 1000U;
 constexpr uint32_t drain_deadline_ms = 600U;
@@ -33,26 +31,18 @@ static_assert(proxy_refused == AOAHID_ADB_PROXY_ERR_ARGUMENT);
 constexpr uint16_t media_usages[] = {0x00B5, 0x00B6, 0x00B7, 0x00CD, 0x00E2, 0x00E9, 0x00EA,
                                      0x0223, 0x0224, 0x0238, 0x0201, 0x006F, 0x0070};
 
+// A close consumes the Node with every result but these, an error included.
+bool node_consumed(const aoahid_result closed) noexcept {
+    return closed != AOAHID_ERR_PARAM && closed != AOAHID_ERR_UNSET_FIELD &&
+           closed != AOAHID_CLOSE_PENDING;
+}
+
 aoahid_device_options device_options() noexcept {
     aoahid_device_options options{};
-    options.struct_size = static_cast<uint32_t>(sizeof(options));
-    options.descriptor_fragment_bytes = descriptor_policy_bytes;
+    aoahid_device_options_init(&options); // the Linux HID limits of libaoahid's docs/LIMITS.md
     options.transfer_pool_slots = pool_slots;
-    options.maximum_report_bytes = report_policy_bytes;
     // The specs are fixed and range-checked by the profile factories.
     options.validate_reports = 0U;
-    options.aoa_descriptor_wire_policy_bytes = descriptor_policy_bytes;
-    options.linux_descriptor_policy_bytes = descriptor_policy_bytes;
-    // The Linux HID parser limits listed in libaoahid's docs/LIMITS.md.
-    options.linux_hid_fields_per_report_policy = 256U;
-    options.linux_hid_global_stack_depth_policy = 4U;
-    options.linux_hid_usages_policy = 12288U;
-    options.linux_hid_report_data_policy_bits = 65528U;
-    options.linux_hid_report_size_policy_bits = 256U;
-    options.target_ep0_data_policy_bytes = descriptor_policy_bytes;
-    options.host_control_buffer_policy_bytes = descriptor_policy_bytes;
-    options.interface_claim_policy = AOAHID_INTERFACE_CLAIM_NONE;
-    options.interface_number = -1;
     return options;
 }
 
@@ -243,11 +233,10 @@ class AoaPort final : public Port {
             if (wanted == (slot != nullptr))
                 return AOAHID_OK;
             if (!wanted) {
-                // Neutral reports first, then the unregister; an error leaves
-                // the Node open.
+                // Neutral reports first, then the unregister.
                 const aoahid_result closed =
                     aoahid_node_close(slot, control_timeout_ms, close_drain_timeout_ms);
-                if (closed == AOAHID_OK)
+                if (node_consumed(closed))
                     slot = nullptr;
                 return closed;
             }
@@ -278,7 +267,7 @@ class AoaPort final : public Port {
              !(touch_hid_ == options.touch_hid))) {
             result =
                 aoahid_node_close(nodes_[node_touch], control_timeout_ms, close_drain_timeout_ms);
-            if (result == AOAHID_OK)
+            if (node_consumed(result))
                 nodes_[node_touch] = nullptr;
         }
         if (result == AOAHID_OK) {

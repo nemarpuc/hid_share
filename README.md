@@ -296,7 +296,7 @@ shares a screen edge with your desktop's own edge features:
 
 ## Building
 
-Requires CMake 3.22, a C++20 compiler, libaoahid 2.0 or newer and libmimhid 1.3.3 or newer. On Linux each
+Requires CMake 3.22, a C++20 compiler, libaoahid 2.0 or newer and libmimhid 2.0 or newer. On Linux each
 backend is built when its libraries are found:
 
 | Backend | Packages (Debian names) |
