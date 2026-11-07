@@ -26,10 +26,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux is built in Debian 12 (glibc 2.36, the oldest with libei), so the
+          # Linux is built on Ubuntu 22.04 (glibc 2.35, like libaoahid and libmimhid), so the
           # programs run on it and on anything newer, not only on the runner's own release.
-          - os: ubuntu-24.04
-            container: debian:12
+          - os: ubuntu-22.04
             platform: linux
             name: linux-x86_64
             aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
@@ -57,8 +56,7 @@ jobs:
             aoahid_sha256: 4dd285d28fa4fca4a0838ce8e6f53d9ea63a36ca1b8968e3c2202f4a69002d28
             mimhid_asset: libmimhid-*-macos-x86_64-shared.tar.gz
             mimhid_sha256: 7b10476b2fbf85c0cfdf3bd0fd4023c116e98f49fc19a748d9b7ac432d8a0cab
-          - os: ubuntu-24.04-arm
-            container: debian:12
+          - os: ubuntu-22.04-arm
             platform: linux
             name: linux-aarch64
             aoahid_asset: libaoahid-*-linux-aarch64-ubuntu22.04-shared.tar.gz
@@ -74,22 +72,23 @@ jobs:
             mimhid_asset: libmimhid-*-windows-arm64-shared.zip
             mimhid_sha256: c7150a4414f37bd14430357ae210f9887cadb529f9bbe66c28f3c5dd42279959
     runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: Install build dependencies
         if: matrix.platform == 'linux'
         run: |
-          SUDO=""
-          if [ "$(id -u)" -ne 0 ]; then SUDO=sudo; fi
-          $SUDO apt-get update
-          $SUDO apt-get install --no-install-recommends -y ca-certificates curl git gh cmake g++ \
-            make ninja-build pkg-config \
-            libwayland-dev libwayland-bin libdbus-1-dev libei-dev \
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ninja-build pkg-config \
+            meson python3-attr python3-jinja2 curl bzip2 \
+            libwayland-dev libwayland-bin libdbus-1-dev \
             libxcb1-dev libxcb-xfixes0-dev libxcb-xinput-dev libxcb-randr0-dev \
             libxkbcommon-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev \
             libxi-dev libxext-dev libgl1-mesa-dev
 
-      - uses: actions/checkout@v4
+      - name: Build libei
+        if: matrix.platform == 'linux'
+        run: .github/scripts/build-libei.sh
 
       - name: Download libaoahid release asset
         shell: bash
@@ -201,6 +200,8 @@ jobs:
             cp -a "$AOAHID_PREFIX"/lib/libaoahid*.dylib "$MIMHID_PREFIX"/lib/libmimhid*.dylib "$stage/bin/"
           else
             cp -a "$AOAHID_PREFIX"/lib/libaoahid.so* "$MIMHID_PREFIX"/lib/libmimhid.so* "$stage/bin/"
+            # libei is not packaged on the older systems, so it travels with the programs.
+            cp -a "$LIBEI_PREFIX"/lib/libei.so* "$stage/bin/"
           fi
           mkdir -p "$stage/licenses"
           cp README.md CHANGELOG.md LICENSE "$stage/"
@@ -208,6 +209,9 @@ jobs:
           cp third_party/licenses/* "$stage/licenses/"
           cp -R "$AOAHID_PREFIX"/share/doc/libaoahid "$stage/licenses/libaoahid" 2> /dev/null || true
           cp -R "$MIMHID_PREFIX"/share/doc/libmimhid "$stage/licenses/libmimhid" 2> /dev/null || true
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            install -D "$LIBEI_PREFIX/share/doc/libei/COPYING" "$stage/licenses/libei/COPYING"
+          fi
           if [ "${{ matrix.platform }}" = "windows" ]; then
             7z a -tzip "$stage.zip" "$stage" > /dev/null
           else

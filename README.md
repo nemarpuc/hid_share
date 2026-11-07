@@ -263,9 +263,10 @@ to device.
 
 **Release archives** (GitHub Releases): `linux-x86_64`, `linux-aarch64`, `macos-arm64`,
 `macos-x86_64`, `windows-x86_64`, `windows-arm64`, with `SHA256SUMS`. The Linux ones are
-built on Debian 12 and need glibc 2.36 or newer (Debian 12, Ubuntu 23.04, Fedora 37,
-Arch and later) and, installed from your distribution, `libusb-1.0`, `libei` (`libei1`),
-`libdbus-1`, `libwayland-client` and `libxcb`. `linux-aarch64` and `windows-arm64` are
+built on Ubuntu 22.04 and need glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36,
+Arch and later) and, installed from your distribution, `libusb-1.0`, `libdbus-1`,
+`libwayland-client` and `libxcb`. libei (MIT) is built from Debian's source tarball, pinned
+by SHA-256, and travels in `bin/` with the programs. `linux-aarch64` and `windows-arm64` are
 built and tested in CI only; they have not been run on hardware.
 
 Details, permissions and limits: [docs/PLATFORMS.md](docs/PLATFORMS.md). How it

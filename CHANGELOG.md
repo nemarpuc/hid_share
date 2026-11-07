@@ -3,7 +3,7 @@
 ## 0.6.1 - 2026-11-07
 
 - New release archives: `linux-aarch64` and `windows-arm64`, the two platforms libaoahid and libmimhid already shipped. They are built and tested in CI; neither has been run on hardware.
-- The Linux archives are built on Debian 12 and need glibc 2.36 or newer. Before, they were built on Ubuntu 24.04 and needed glibc 2.38, so they did not start on Debian 12 or Ubuntu 22.04 and 23.10.
+- The Linux archives are built on Ubuntu 22.04 (glibc 2.35, like libaoahid and libmimhid). Before, they were built on Ubuntu 24.04 and needed glibc 2.38, so they did not start on Ubuntu 22.04 or 23.10 or on Debian 12. Ubuntu 22.04 has no libei package, so libei 1.5.0 is built from Debian's source tarball (pinned SHA-256, `.github/scripts/build-libei.sh`) and its `libei.so.1` is shipped in `bin/` next to the programs, with its licence under `licenses/libei/`.
 - Fixed the release notes of 0.6.0 being empty: the release job looked for the heading `## 0.6.0` exactly and the dated heading did not match. A heading may carry ` - date` now, and a release with no changelog section fails instead of publishing empty notes.
 - README: libaoahid 0.1 (not 4.0) for a phone.
 
