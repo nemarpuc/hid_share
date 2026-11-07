@@ -172,9 +172,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          arch=()
-          if [ -n "${{ matrix.cmake_arch }}" ]; then arch=(-A "${{ matrix.cmake_arch }}"); fi
-          cmake -S . -B build "${arch[@]}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$AOAHID_PREFIX;$MIMHID_PREFIX"
+          # The Visual Studio generator is told the architecture; the others need nothing.
+          if [ -n "${{ matrix.cmake_arch }}" ]; then
+            cmake -S . -B build -A "${{ matrix.cmake_arch }}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$AOAHID_PREFIX;$MIMHID_PREFIX"
+          else
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$AOAHID_PREFIX;$MIMHID_PREFIX"
+          fi
           cmake --build build --config Release --parallel
           ctest --test-dir build --output-on-failure -C Release
 
