@@ -149,8 +149,8 @@ window.
 | The device's `switch` key | to the device, and back when it has the input |
 | `hid_share release` | returns to the computer, from a terminal |
 
-Shortcuts are set per device, in its Shortcuts tab, and none is set to start with:
-`switch` takes the input to the device and back, `lock` keeps it there (for a
+Shortcuts are set per device, in its Shortcuts tab (press **Record keys**, then the combination), and none is set to start with:
+`switch` takes the input to the device and back, `lock` keeps the input where it is, on the device or on the computer (for a
 game that takes the mouse), and each media key can have one.
 
 If the device is unplugged or stops answering, the input returns on its own.

@@ -26,6 +26,55 @@ std::string without_line(const std::string& problem) {
     return problem;
 }
 
+// The combination being pressed, in the text parse_hotkey reads ("ctrl+shift+f1"),
+// or empty until a key other than a modifier goes down this frame.
+std::string pressed_hotkey() {
+    struct Named {
+        ImGuiKey key;
+        const char* name;
+    };
+    static constexpr Named named[] = {
+        {ImGuiKey_Space, "space"},    {ImGuiKey_Tab, "tab"},
+        {ImGuiKey_Enter, "enter"},    {ImGuiKey_Backspace, "backspace"},
+        {ImGuiKey_Pause, "pause"},    {ImGuiKey_ScrollLock, "scrolllock"},
+        {ImGuiKey_Insert, "insert"},  {ImGuiKey_Delete, "delete"},
+        {ImGuiKey_Home, "home"},      {ImGuiKey_End, "end"},
+        {ImGuiKey_PageUp, "pageup"},  {ImGuiKey_PageDown, "pagedown"},
+        {ImGuiKey_UpArrow, "up"},     {ImGuiKey_DownArrow, "down"},
+        {ImGuiKey_LeftArrow, "left"}, {ImGuiKey_RightArrow, "right"},
+    };
+    std::string token;
+    for (int k = ImGuiKey_A; k <= ImGuiKey_Z && token.empty(); ++k) {
+        if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k), false))
+            token = std::string(1, static_cast<char>('a' + (k - ImGuiKey_A)));
+    }
+    for (int k = ImGuiKey_0; k <= ImGuiKey_9 && token.empty(); ++k) {
+        if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k), false))
+            token = std::string(1, static_cast<char>('0' + (k - ImGuiKey_0)));
+    }
+    for (int k = ImGuiKey_F1; k <= ImGuiKey_F24 && token.empty(); ++k) {
+        if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k), false))
+            token = "f" + std::to_string(k - ImGuiKey_F1 + 1);
+    }
+    for (const Named& each : named) {
+        if (token.empty() && ImGui::IsKeyPressed(each.key, false))
+            token = each.name;
+    }
+    if (token.empty())
+        return {};
+    const ImGuiIO& io = ImGui::GetIO();
+    std::string text;
+    if (io.KeyCtrl)
+        text += "ctrl+";
+    if (io.KeyShift)
+        text += "shift+";
+    if (io.KeyAlt)
+        text += "alt+";
+    if (io.KeySuper)
+        text += "meta+";
+    return text + token;
+}
+
 // Takes the text through the parsers. On an objection the row keeps the
 // reason and nothing changes.
 bool apply_text(App& app, const hids::ConfigKey& key, hids::DeviceConfig* device,
@@ -199,13 +248,14 @@ bool field(App& app, const hids::ConfigKey& key, hids::DeviceConfig* device,
             text != now.value_or(""))
             text = now.value_or("");
         const bool polling = std::strcmp(key.key, "report_rate_hz") == 0;
+        const bool hotkey = key.kind == hids::KeyKind::hotkey;
         const std::string hint =
             replaceable ? std::string(polling ? "computer: " : "same as the computer: ") +
                               (computer_text.empty() ? "not set" : computer_text)
                         : (key.initial[0] != '\0' ? std::string(key.initial) : "not set");
         // Room beside the input for what goes with it.
         ImGui::SetNextItemWidth(wide - (replaceable ? look::px(64) : 0.0F) -
-                                (polling ? look::px(96) : 0.0F));
+                                (polling ? look::px(96) : 0.0F) - (hotkey ? look::px(140) : 0.0F));
         ImGui::InputTextWithHint("##value", hint.c_str(), &text);
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             changed = replaceable && text.empty() ? clear_row(app, key, device, id)
@@ -215,6 +265,24 @@ bool field(App& app, const hids::ConfigKey& key, hids::DeviceConfig* device,
             ImGui::SameLine();
             if (ImGui::Button("Reset"))
                 changed = clear_row(app, key, device, id);
+        }
+        if (hotkey) {
+            // Press the combination instead of spelling it; typing still works.
+            ImGui::SameLine();
+            const bool waiting = app.recording == id;
+            if (ImGui::Button(waiting ? "Press keys (Esc: cancel)" : "Record keys")) {
+                app.recording = waiting ? std::string() : id;
+            } else if (waiting) {
+                if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+                    app.recording.clear();
+                } else {
+                    const std::string combination = pressed_hotkey();
+                    if (!combination.empty()) {
+                        app.recording.clear();
+                        changed = apply_text(app, key, device, combination, id);
+                    }
+                }
+            }
         }
         if (polling) {
             // The usual polling rates, for picking instead of typing.

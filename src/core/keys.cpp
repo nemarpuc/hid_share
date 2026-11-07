@@ -15,7 +15,7 @@ using K = KeyKind;
      "", "The interface number of the " node "; empty takes the lowest free one. Nodes with the " \
      "same number share an interface and each needs its own report_id."},                       \
     {S::device, section, "interface_name", "Board USB interfaces", K::text,                     \
-     "at most 31 characters", "", "", "The interface string of the " node "; empty: none."},    \
+     "at most 126 characters", "", "", "The interface string of the " node "; empty: none."},    \
     {S::device, section, "poll_interval_ms", "Board USB interfaces", K::integer, "1..255",      \
      "ms", "", "How often the target polls the " node "; empty takes the ordinary interval."},   \
     {S::device, section, "ep_in_size", "Board USB interfaces", K::integer, "1..1024", "B",       \
@@ -131,8 +131,8 @@ constexpr ConfigKey table[] = {
     {S::device, "keys", "switch", "Keys", K::hotkey, "", "", "",
      "Takes the input to this device, and back to the computer when it has it."},
     {S::device, "keys", "lock", "Keys", K::hotkey, "", "", "",
-     "While the input is on this device: keeps it here whatever edge the cursor reaches; again "
-     "to let go."},
+     "Keeps the input where it is: on this device, whatever edge the cursor reaches; on the "
+     "computer, no edge takes it to any device. Press again to let go."},
     {S::device, "keys", "resync", "Keys", K::hotkey, "", "", "",
      "While the input is on this device: its next entry takes the corner reference."},
     {S::device, "keys", "previous", "Media", K::hotkey, "", "", "",
@@ -208,13 +208,13 @@ constexpr ConfigKey table[] = {
      "both or neither."},
     {S::device, "usb", "product_id", "Board USB", K::text, "0x0001..0xFFFF", "", "0x0001",
      "The product id the board announces; see vendor_id."},
-    {S::device, "usb", "manufacturer", "Board USB", K::text, "at most 31 characters", "",
+    {S::device, "usb", "manufacturer", "Board USB", K::text, "at most 126 characters", "",
      "Generic", "The manufacturer string the board announces."},
-    {S::device, "usb", "product", "Board USB", K::text, "at most 31 characters", "",
+    {S::device, "usb", "product", "Board USB", K::text, "at most 126 characters", "",
      "USB Input Device", "The product string the board announces."},
     {S::device, "usb", "language_id", "Board USB", K::text, "0x0001..0xFFFF", "", "0x0409",
      "The language id (LANGID) of every string the board announces."},
-    {S::device, "usb", "serial", "Board USB", K::text, "at most 31 characters", "", "",
+    {S::device, "usb", "serial", "Board USB", K::text, "at most 126 characters", "", "",
      "The serial number the board announces; empty announces none (unless serial_from_chip_id)."},
     {S::device, "usb", "serial_from_chip_id", "Board USB", K::boolean, "", "", "false",
      "Announce the board chip's own id as the serial number when serial is empty."},
@@ -226,7 +226,7 @@ constexpr ConfigKey table[] = {
      "The board announces that it has a power supply of its own."},
     {S::device, "usb", "remote_wakeup", "Board USB", K::boolean, "", "", "false",
      "The board announces that it can wake its target."},
-    {S::device, "usb", "configuration", "Board USB", K::text, "at most 31 characters", "", "",
+    {S::device, "usb", "configuration", "Board USB", K::text, "at most 126 characters", "", "",
      "The configuration string the board announces; empty announces none."},
 
     // device file [usb.mouse] ... [usb.touch]

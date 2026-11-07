@@ -21,6 +21,8 @@ void usage() {
               "  enter [DEVICE]      move the input to a device (default: the last one used)\n"
               "  release             bring the input back to this computer\n"
               "  pause, resume       stop and restart crossing at the screen edge\n"
+              "  lock | unlock       keep the input where it is (on the computer: no edge takes it "
+              "away)\n"
               "  resync              take the corner reference on the next crossing\n"
               "  connect DEVICE      open a device; a plugged-in one with no file gets one\n"
               "                      of its own; nothing is read from it. Nothing is opened\n"

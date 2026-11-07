@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "hid_share/clone.hpp"
+#include "hid_share/config.hpp"
 
 #include <charconv>
 #include <cstdio>
@@ -60,15 +61,8 @@ bool bytes_of(const std::string_view hex, std::vector<uint8_t>& out) {
     return true;
 }
 
-// A string the board announces: printable ASCII, at most 31 characters.
-bool announced(const std::string_view text) noexcept {
-    if (text.size() > 31)
-        return false;
-    for (const char c : text)
-        if (c < 0x20 || c > 0x7E)
-            return false;
-    return true;
-}
+// A string the board announces: see valid_usb_string.
+bool announced(const std::string_view text) noexcept { return valid_usb_string(text); }
 
 std::string id_text(const uint16_t id) {
     char buffer[8];
@@ -128,7 +122,7 @@ std::string set_interface(CloneSnapshot& s, const size_t index, const std::strin
             return at + " has a name that is not hex";
         f.name.assign(name.begin(), name.end());
         if (!announced(f.name))
-            return at + " has a name that is not printable";
+            return at + " has a name that is not UTF-8 of at most 126 characters";
     }
     if (!bytes_of(t[9], f.descriptor) || f.descriptor.empty())
         return at + " has a descriptor that is not hex";
@@ -195,7 +189,7 @@ std::string set_clone_key(CloneSnapshot& s, const std::string_view key,
     }
     if (key == "manufacturer" || key == "product" || key == "serial") {
         if (!announced(value))
-            return std::string(key) + " is not printable ASCII of at most 31 characters";
+            return std::string(key) + " is not UTF-8 of at most 126 characters";
         (key == "manufacturer" ? d.manufacturer : key == "product" ? d.product : d.serial) =
             std::string(value);
         return {};

@@ -209,6 +209,9 @@ class Daemon final : public CaptureHandler {
     std::vector<PhoneKeys> keys_;
     // The device that has the input is locked: no edge takes the input off it.
     std::atomic<bool> locked_{};
+    // The input is on the computer and locked: no edge takes it to a device.
+    // A `switch` key or `enter` still does, and ends the lock.
+    std::atomic<bool> pc_locked_{};
     // Devices the user asked to connect, by serial: only these are opened, and
     // one that drops out is opened again when it comes back. Starting the
     // daemon opens nothing. Capture thread only.

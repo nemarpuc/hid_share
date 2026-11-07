@@ -45,6 +45,8 @@ struct App {
     // the text being typed in a row.
     std::map<std::string, std::string> field_errors;
     std::map<std::string, std::string> editing;
+    // The row (by id) that is waiting for a key combination to be pressed; empty if none.
+    std::string recording;
 
     std::map<std::string, std::string> status;
     std::vector<hids::Monitor> monitors;

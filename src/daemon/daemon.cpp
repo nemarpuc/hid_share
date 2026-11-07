@@ -1096,7 +1096,7 @@ void Daemon::monitors_changed() {
 
 bool Daemon::edge_hit(const uint32_t barrier, const int t, const double push,
                       const bool button_down) {
-    if (paused_ || active_ >= 0 || barrier == 0 || barrier > phones_.size())
+    if (paused_ || pc_locked_ || active_ >= 0 || barrier == 0 || barrier > phones_.size())
         return false;
     Phone& phone = *phones_[barrier - 1];
     const double time = now();
@@ -1259,9 +1259,21 @@ bool Daemon::hotkey(const HidKey key, const bool down) {
         }
         return true;
     }
+    // On the computer, any device's lock key keeps the input here: no edge
+    // takes it away until the key is pressed again.
+    if (active_ < 0) {
+        for (size_t index = 0; index < count; ++index) {
+            if (!pressed(keys_[index].lock))
+                continue;
+            if (down)
+                pc_locked_ = !pc_locked_;
+            return true;
+        }
+        return false;
+    }
     // The lock and resync keys are those of the device that has the input.
     const int active = active_;
-    if (active < 0 || static_cast<size_t>(active) >= count)
+    if (static_cast<size_t>(active) >= count)
         return false;
     const PhoneKeys& own = keys_[static_cast<size_t>(active)];
     Session& session = *phones_[static_cast<size_t>(active)]->session;
@@ -1341,6 +1353,7 @@ std::string Daemon::enter_by_command(const size_t index) {
     if (!phone.layout_ok || !hub_.alive(phone.link))
         return "error=the device is not ready";
     locked_ = false;
+    pc_locked_ = false;
     if (active_ >= 0) {
         // From another device: the input is held already, and that
         // device's cursor is put away.
@@ -1481,6 +1494,7 @@ std::string Daemon::render_status() {
     if (active >= 0 && static_cast<size_t>(active) < view->phones.size())
         out << "active=" << one_line(view->phones[static_cast<size_t>(active)].serial) << "\n";
     out << view->head;
+    out << "pc_locked=" << (pc_locked_.load() ? "yes" : "no") << "\n";
     const PhoneView* const held =
         locked_.load() && active >= 0 && static_cast<size_t>(active) < view->phones.size()
             ? &view->phones[static_cast<size_t>(active)]
@@ -1592,6 +1606,17 @@ std::string Daemon::command(const std::string& line) {
             paused_ = verb == "pause";
             if (paused_)
                 leave();
+            answer = "ok";
+        } else if (verb == "lock" || verb == "unlock") {
+            // For a desktop shortcut where the backend cannot see the keyboard
+            // itself. Locks what has the input: the device, or the computer.
+            const bool on = verb == "lock";
+            if (active_ >= 0 && static_cast<size_t>(active_) < phones_.size()) {
+                locked_ = on;
+                phones_[static_cast<size_t>(active_)]->session->set_locked(on);
+            } else {
+                pc_locked_ = on;
+            }
             answer = "ok";
         } else if (verb == "resync") {
             for (const std::unique_ptr<Phone>& phone : phones_) {

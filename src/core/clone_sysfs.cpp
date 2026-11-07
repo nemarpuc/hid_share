@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "hid_share/clone.hpp"
+#include "hid_share/config.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -74,11 +75,7 @@ bool report_descriptor_of(const fs::path& interface_dir, std::vector<uint8_t>& o
 
 std::string number_of(const CloneInterface& itf) { return std::to_string(itf.number); }
 
-bool printable(const std::string& text) {
-    return text.size() <= 31 && std::all_of(text.begin(), text.end(), [](const char c) {
-               return c >= 0x20 && c <= 0x7E;
-           });
-}
+bool printable(const std::string& text) { return valid_usb_string(text); }
 
 } // namespace
 
@@ -218,7 +215,7 @@ std::string read_clone_device(const CloneSource& source, const fs::path& root, C
 
         itf.name = line_of(dir / "interface");
         if (!printable(itf.name)) {
-            out.notes.push_back(name + ": its name is not printable ASCII of at most 31 "
+            out.notes.push_back(name + ": its name is not UTF-8 of at most 126 "
                                        "characters and is left out");
             itf.name.clear();
         }

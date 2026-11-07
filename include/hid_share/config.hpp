@@ -300,8 +300,8 @@ struct Config {
 // What a serial and a name may be. A serial names a file and a status key:
 // letters, digits and `- _ .`, at most 64, not starting with a dot, and
 // not a name the file system keeps for itself. A name is shown and typed:
-// at most 48 bytes without `=`, `;` or `#`, which the file's
-// syntax uses. Both come from outside (a USB
+// any length of well-formed UTF-8 without controls, `=`, `;` or `#`, which
+// the file's syntax uses. Both come from outside (a USB
 // descriptor, what a device calls itself), so they are checked wherever
 // they enter.
 [[nodiscard]] bool valid_serial(std::string_view text) noexcept;
@@ -310,6 +310,13 @@ struct Config {
 // `link = mim` has this as its serial. Empty for an empty port.
 [[nodiscard]] std::string mim_serial_of(std::string_view port);
 [[nodiscard]] bool valid_name(std::string_view text) noexcept;
+
+// A string the board announces to its target. libmimhid takes UTF-8 and sends
+// UTF-16 (USB 2.0 9.6.7: a string descriptor holds at most 126 code units), so
+// the limit is that, not a count of ASCII characters. Well-formed UTF-8, no
+// controls (C0, DEL, C1). A code point from U+10000 up takes two units.
+inline constexpr size_t usb_string_max_units = 126;
+[[nodiscard]] bool valid_usb_string(std::string_view text) noexcept;
 
 // config.ini: everything but the devices. Empty on success, else
 // "line N: what is wrong"; out is unchanged on failure. It also reads an older

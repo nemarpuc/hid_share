@@ -198,7 +198,7 @@ reads as not set).
 | --- | --- | --- |
 | `serial` | empty | the serial the file is named after; a profile that names none is filed as `unassigned N.ini` until a device takes it |
 | `link` | empty | `aoa` for a phone, `mim` for a microcontroller board. It is set when the device is added and has no default: without it the device's status says it is missing |
-| `name` | empty | display name, at most 48 bytes, without `=`, `;`, `#`; it may not be another device's serial |
+| `name` | empty | display name, any length, UTF-8 (any language), without controls, `=`, `;`, `#`; it may not be another device's serial |
 | `enabled` | `true` | `false` keeps the device configured but left alone |
 
 ### `[keys]`
@@ -208,7 +208,7 @@ The device's own shortcuts, all empty (none) to start with.
 | Key | Works | |
 | --- | --- | --- |
 | `switch` | anywhere | takes the input to this device, and back to the computer when it has it |
-| `lock` | while the input is on this device | keeps the input here whatever edge the cursor reaches, also toward a device beside it; press again to let go |
+| `lock` | anywhere | keeps the input where it is. On this device: whatever edge the cursor reaches, also toward a device beside it. On the computer: no edge takes it to any device (for a game on the PC). Press again to let go |
 | `resync` | while the input is on this device | its next entry takes the corner reference |
 | `previous`, `play_pause`, `next`, `brightness_up`, `brightness_down`, `volume_up`, `volume_down` | anywhere | sends that media key to this device |
 
@@ -233,6 +233,12 @@ It ends with the lock key, a `switch` key, `hid_share release` or `pause`,
 or when the input is taken back for another reason: the device is closed, or
 another device or a monitor comes or goes. It is not kept: a device starts
 unlocked.
+
+On the computer, any device's `lock` key keeps the input there: no edge takes it to a
+device (`status` says `pc_locked=yes`). It ends with the key again, `hid_share unlock`, or a
+`switch` key or `enter`, which still take the input. `hid_share lock` and `unlock` do the same
+where the backend cannot see keys on the computer (`portal`, `layer_shell`; bind them in the
+desktop's own shortcut settings). It is not kept across a restart.
 
 "Anywhere" needs a backend that sees the keyboard while the input is on the
 computer (`local_hotkeys=yes` in `status`). On `portal` and `layer_shell` these
@@ -328,7 +334,7 @@ window; whatever the mouse does not give returns to its default.
 | `baud` | empty | the serial line rate of this board, any rate the board's UART makes (the RP2040 reaches 7,812,500); libmimhid refuses one the link does not carry. Adding the board from the search (`rescan`) writes the fastest rate the search saw the board and its serial adapter carry; a rate they do not carry is refused when the board is opened. Boards differ, so it is the board's own, not the computer's |
 | `port` | empty | the board's serial port: `/dev/ttyUSB0`, a `/dev/serial/by-id/` path (it stays the same when the board is plugged in again) or `COM3`. The device's `serial` is `mim-` and the end of this, with anything a serial may not hold turned into `_`; a file whose serial is another is refused. It is set when the device is added and is not typed in the settings window |
 | `vendor_id`, `product_id` | `0x1209`, `0x0001` | the ids the board announces to its target, 0x0001 to 0xFFFF |
-| `manufacturer`, `product` | `Generic`, `USB Input Device` | the strings it announces, printable ASCII, at most 31 characters |
+| `manufacturer`, `product` | `Generic`, `USB Input Device` | the strings it announces, UTF-8 (any language), at most 126 characters |
 | `language_id` | `0x0409` | the language id (LANGID) of every string it announces, 0x0001 to 0xFFFF |
 | `serial` | empty | the serial number it announces; empty announces none |
 | `serial_from_chip_id` | `false` | announce the chip's own id as the serial number when `serial` is empty |
@@ -347,7 +353,7 @@ need no `[usb]` values, and the same key means the same in all four.
 | Key | Default | |
 | --- | --- | --- |
 | `interface_number` | empty | 0 to 255 and below the board's interface count; empty gives the lowest numbers no pinned Node uses, in the order mouse, keyboard, media, touchscreen. Nodes with the same number share one interface (one HID interface with a Report ID for each), and then every one of them must have its own `report_id`; without that the board is not opened and the status says which |
-| `interface_name` | empty | the interface string, printable ASCII, at most 31 characters; empty announces none |
+| `interface_name` | empty | the interface string, UTF-8 (any language), at most 126 characters; empty announces none |
 | `poll_interval_ms` | empty | how often the target polls, 1 to 255 ms; empty takes the ordinary interval |
 | `ep_in_size`, `ep_out_size` | empty | endpoint sizes in bytes, any value from 1 to 1024 as given, not rounded (the OUT endpoint also 0 for none); empty takes the ordinary sizes. A board takes only what its chip holds (64 at full speed, 1024 at high speed) and refuses more |
 | `bcd_hid` | empty | the HID release number, 0x0001 to 0xFFFF |

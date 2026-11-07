@@ -386,13 +386,13 @@ bool to_usb_id(const std::string_view value, uint16_t& out) noexcept {
     return true;
 }
 
-// A string the board announces: printable ASCII, at most 31 characters, and
-// none that starts a comment in the file.
+// A string the board announces (see valid_usb_string), and none that starts a
+// comment in the file.
 bool to_usb_text(const std::string_view value, std::string& out) {
-    if (value.size() > 31)
+    if (!valid_usb_string(value))
         return false;
     for (const char c : value) {
-        if (c < 0x20 || c > 0x7E || c == ';' || c == '#')
+        if (c == ';' || c == '#')
             return false;
     }
     out = value;
@@ -645,6 +645,53 @@ bool to_accel(const std::string_view value, AccelSetting& out) noexcept {
 // name with one would read back shorter than it was written.
 bool name_character(const char c) noexcept {
     return static_cast<unsigned char>(c) >= 0x20 && c != 0x7F && c != '=' && c != ';' && c != '#';
+}
+
+// Whether `text` is well-formed UTF-8 (RFC 3629): no overlong forms, no
+// surrogates, nothing above U+10FFFF. Controls (C0, DEL, C1) and the line and
+// paragraph separators U+2028/U+2029 are refused too, since a name sits on one
+// line of a file and of `status`.
+bool well_formed_utf8(const std::string_view text) noexcept {
+    size_t i = 0;
+    while (i < text.size()) {
+        const auto b0 = static_cast<unsigned char>(text[i]);
+        if (b0 < 0x80) {
+            ++i;
+            continue;
+        }
+        size_t extra = 0;
+        uint32_t code = 0;
+        uint32_t least = 0;
+        if (b0 >= 0xC2 && b0 <= 0xDF) {
+            extra = 1;
+            code = b0 & 0x1FU;
+            least = 0x80;
+        } else if (b0 >= 0xE0 && b0 <= 0xEF) {
+            extra = 2;
+            code = b0 & 0x0FU;
+            least = 0x800;
+        } else if (b0 >= 0xF0 && b0 <= 0xF4) {
+            extra = 3;
+            code = b0 & 0x07U;
+            least = 0x10000;
+        } else {
+            return false;
+        }
+        if (i + extra >= text.size())
+            return false;
+        for (size_t k = 1; k <= extra; ++k) {
+            const auto next = static_cast<unsigned char>(text[i + k]);
+            if ((next & 0xC0U) != 0x80U)
+                return false;
+            code = (code << 6) | (next & 0x3FU);
+        }
+        if (code < least || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF))
+            return false;
+        if ((code >= 0x80 && code <= 0x9F) || code == 0x2028 || code == 0x2029)
+            return false;
+        i += extra + 1;
+    }
+    return true;
 }
 
 bool to_name(const std::string_view value, std::string& out) {
@@ -910,13 +957,30 @@ std::string mim_serial_of(const std::string_view port) {
 }
 
 bool valid_name(const std::string_view text) noexcept {
-    if (text.size() > 48)
-        return false;
     for (const char c : text) {
         if (!name_character(c))
             return false;
     }
+    if (!well_formed_utf8(text))
+        return false;
     return text.empty() || (text.front() != ' ' && text.back() != ' ');
+}
+
+bool valid_usb_string(const std::string_view text) noexcept {
+    for (const char c : text) {
+        if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F)
+            return false;
+    }
+    if (!well_formed_utf8(text))
+        return false;
+    size_t units = 0;
+    for (const char c : text) {
+        const auto byte = static_cast<unsigned char>(c);
+        if ((byte & 0xC0U) == 0x80U)
+            continue;
+        units += byte >= 0xF0U ? 2 : 1;
+    }
+    return units <= usb_string_max_units;
 }
 
 int edge_length_of(const DeviceConfig& device, const int edge) noexcept {

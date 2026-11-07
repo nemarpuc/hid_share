@@ -1,8 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 - 2026-11-07
 
-- Builds against libmimhid 0.1.0 and libaoahid 0.1.0 (their version lines restarted; the old releases are gone). A board of another firmware version is told by `firmware_compatible`, since the protocol number no longer exists. `[mim] baud` takes any rate up to 2,147,483,647: the search can find 7,812,500 on an RP2040, which the old limit of 4,000,000 refused. The CI and release pins still name the old assets and must move to the 0.1.0 assets (with their SHA-256) before the next release.
+- A device's display name has no length limit any more (it was 48 bytes, which is 16 Japanese characters). It must be well-formed UTF-8 without controls, `=`, `;` or `#`. The GUI font has no CJK glyphs, so such a name shows as `?` in the window; the file, `status` and the CLI carry it intact. The board's USB strings (31 ASCII characters) are the board's limit and stay.
+- The strings a board announces (`manufacturer`, `product`, `serial`, `configuration`, `interface_name`, and a clone's names) are UTF-8 of at most 126 characters, which is libmimhid's own limit (USB 2.0 9.6.7: a string descriptor holds 126 UTF-16 units; a character from U+10000 up counts twice). They were 31 ASCII characters, a limit of this program and not of the board. `hid_share` does not set `language_id` for you: it stays 0x0409 unless the file says otherwise.
+- `lock` also works while the input is on the computer: no edge takes it to a device until the key is pressed again (`status`: `pc_locked`). New commands `hid_share lock` and `hid_share unlock` for backends that cannot see keys on the computer. A `switch` key or `enter` still takes the input and ends the lock. Not run on a real desktop yet.
+- Shortcuts: a **Record keys** button beside each shortcut field takes the combination you press (Esc cancels); typing it still works.
+- Builds against libmimhid 0.1.0 and libaoahid 0.1.0 (their version lines restarted; the old releases are gone). A board of another firmware version is told by `firmware_compatible`, since the protocol number no longer exists. `[mim] baud` takes any rate up to 2,147,483,647: the search can find 7,812,500 on an RP2040, which the old limit of 4,000,000 refused. The CI and release pins name the 0.1.0 assets with their SHA-256.
 
 ## 0.5.0
 

@@ -272,7 +272,8 @@ TEST_CASE("a Node's USB interface values are read, written and checked") {
     CHECK(refused("usb.mouse", "report_id = 0"));
     CHECK(refused("usb.mouse", "report_id = 256"));
     CHECK(refused("usb.mouse", "boot_protocol = 1"));
-    CHECK(refused("usb.mouse", "interface_name = 0123456789012345678901234567890x"));
+    const std::string too_long = "interface_name = " + std::string(127, 'x');
+    CHECK(refused("usb.mouse", too_long.c_str()));
     CHECK(refused("usb.pen", "report_id = 1"));
     CHECK_FALSE(refused("usb.mouse", "ep_out_size = 0"));
 
@@ -992,6 +993,30 @@ TEST_CASE("a device's file round-trips and only replaces what it names") {
     // `;` and `#` would start a comment when the file is read back.
     CHECK(!valid_name("Tab #2"));
     CHECK(!valid_name("a ;b"));
+    // No length cap, and any language: the old limit was 48 bytes.
+    CHECK(valid_name(std::string(500, 'a')));
+    CHECK(valid_name(
+        "\xE3\x83\x9F\xE3\x83\xA0 \xE3\x82\xBF\xE3\x83\x96\xE3\x83\xAC\xE3\x83\x83\xE3\x83\x88"));
+    CHECK(valid_name("\xF0\x9F\x8E\xAE pad"));
+    CHECK(!valid_name("\xE3\x83"));     // truncated
+    CHECK(!valid_name("\xC0\xAF"));     // overlong
+    CHECK(!valid_name("\xED\xA0\x80")); // surrogate
+    CHECK(!valid_name("\xE2\x80\xA8")); // line separator
+    CHECK(!valid_name("\xC2\x85"));     // C1 control
+    // What the board announces: UTF-8, at most 126 UTF-16 units (it was 31 ASCII characters).
+    CHECK(valid_usb_string(""));
+    CHECK(valid_usb_string("Generic Keyboard"));
+    CHECK(valid_usb_string(std::string(126, 'a')));
+    CHECK(!valid_usb_string(std::string(127, 'a')));
+    CHECK(valid_usb_string(
+        "\xE3\x82\xAD\xE3\x83\xBC\xE3\x83\x9C\xE3\x83\xBC\xE3\x83\x89")); // Japanese
+    CHECK(valid_usb_string(std::string(126, 'a').replace(0, 2, "\xE3\x82\xAD")));
+    // A code point from U+10000 up is two units.
+    CHECK(valid_usb_string(std::string(124, 'a') + "\xF0\x9F\x8E\xAE"));
+    CHECK(!valid_usb_string(std::string(125, 'a') + "\xF0\x9F\x8E\xAE"));
+    CHECK(!valid_usb_string("tab\there"));
+    CHECK(!valid_usb_string("\xC2\x85"));
+    CHECK(!valid_usb_string("\xE3\x83"));
     {
         // A name that is another device's serial could never be reached.
         Config clash;
@@ -1679,7 +1704,9 @@ TEST_CASE("a board is written and read back, and its serial comes from its port"
     CHECK_FALSE(parse_device("[device]\nlink = usb\n", fresh).empty());
     CHECK_FALSE(parse_device("[usb]\nvendor_id = 0x10000\n", fresh).empty());
     CHECK_FALSE(parse_device("[usb]\nvendor_id = 0\n", fresh).empty());
-    CHECK_FALSE(parse_device("[usb]\nproduct = 0123456789012345678901234567890x\n", fresh).empty());
+    CHECK_FALSE(parse_device("[usb]\nproduct = " + std::string(127, 'x') + "\n", fresh).empty());
+    // 31 characters used to be the limit; a long Japanese name is fine now.
+    CHECK(parse_device("[usb]\nproduct = 0123456789012345678901234567890x\n", fresh).empty());
 
     // A board is not served by adb and is known by its port.
     Config config;
