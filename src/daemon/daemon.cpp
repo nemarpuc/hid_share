@@ -886,8 +886,12 @@ bool Daemon::measure(Phone& phone) {
         return false;
     }
     phone.natural = {view_width(device), view_height(device)};
-    phone.rotation = device.rotation;
-    phone.view = phone.natural;
+    // A turned display swaps its width and height, and its touch axes are
+    // turned by the same amount (docs/MATH.md, "Orientation"). The raw size
+    // of the touchscreen stays the same, so its Node does not change.
+    const bool sideways = phone.turn == 90 || phone.turn == 270;
+    phone.rotation = device.rotation < 0 ? -1 : (device.rotation + phone.turn) % 360;
+    phone.view = sideways ? Size{phone.natural.h, phone.natural.w} : phone.natural;
 
     // How far one count moves the phone's cursor (docs/MATH.md, "Gain"): the
     // gain given is the one at low speed, and the only one with acceleration
@@ -1448,9 +1452,10 @@ void Daemon::publish_status() {
                 lines << prefix << "serial=" << one_line(phone->serial) << "\n";
                 lines << prefix << "proxy=" << (phone->proxy ? std::to_string(phone->port) : "off")
                       << "\n";
-                if (phone->natural.w > 0)
-                    lines << prefix << "size=" << phone->natural.w << "x" << phone->natural.h
-                          << "\n";
+                if (phone->natural.w > 0) {
+                    lines << prefix << "size=" << phone->view.w << "x" << phone->view.h << "\n";
+                    lines << prefix << "turn=" << phone->turn << "\n";
+                }
                 if (phone->rotation >= 0)
                     lines << prefix << "rotation=" << phone->rotation << "\n";
                 if (phone->layout_ok) {
@@ -1618,6 +1623,32 @@ std::string Daemon::command(const std::string& line) {
                 pc_locked_ = on;
             }
             answer = "ok";
+        } else if (verb == "rotate") {
+            // The display of a device was turned: "rotate 0|90|180|270|next
+            // [NAME]". The degrees are how far it is turned from the
+            // orientation its files were measured in, in the direction of
+            // the touch rotation; next adds 90. A name may hold spaces, so
+            // it is what is left of the line; none means the device that
+            // had the input last.
+            std::string turn_word;
+            words >> turn_word;
+            const std::string name = rest_of(words);
+            const size_t target = name.empty() ? usual_phone() : phone_named(name);
+            answer = "error=rotate 0|90|180|270|next [NAME]";
+            int wanted_turn = -1;
+            if (turn_word == "0" || turn_word == "90" || turn_word == "180" ||
+                turn_word == "270")
+                wanted_turn = std::stoi(turn_word);
+            if (target >= phones_.size() || phones_[target]->link < 0) {
+                answer = "error=no such device, or it is not connected";
+            } else if (turn_word == "next" || wanted_turn >= 0) {
+                Phone& phone = *phones_[target];
+                phone.turn = turn_word == "next" ? (phone.turn + 90) % 360 : wanted_turn;
+                // Lays every device out again, which gives the input back
+                // to the computer and forgets where the cursors are.
+                relayout();
+                answer = "ok";
+            }
         } else if (verb == "resync") {
             for (const std::unique_ptr<Phone>& phone : phones_) {
                 if (phone->session != nullptr)

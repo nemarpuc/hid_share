@@ -66,7 +66,13 @@ class Daemon final : public CaptureHandler {
         // How it was opened (see rebuild_phones()).
         LinkOptions link_options;
         bool wants_proxy{};
+        // The screen as the files give it, in the orientation they were
+        // measured in, and how far the display is turned from that since
+        // (0, 90, 180 or 270, set by `rotate`; it is not kept when the
+        // device is opened again).
         Size natural{};
+        int turn{};
+        // The touch rotation in use: the file's, plus the turn.
         int rotation{-1};
         AccelMode mode{AccelMode::unknown};
         // Pixels one count moves the phone's cursor at low speed.

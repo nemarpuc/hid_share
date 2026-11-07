@@ -438,7 +438,7 @@ the daemon keeps, so asking never holds up the input. Per device the keys are
 | `serial`, `link`, `proxy` | its serial; `aoa` or `mim`; the proxy port or `off` |
 | `wanted`, `plugged` | `yes` when `connect` was asked for it and has not been undone; `yes` when the last scan saw it plugged in |
 | `locked` | `yes` while its lock key holds the input on it; only for a device that is open |
-| `size`, `rotation` | the values in use: pixels, degrees (the touch rotation) |
+| `size`, `turn`, `rotation` | the values in use: the display's pixels as it is held now, how far it is turned from the orientation its files were measured in (`rotate`), and the touch rotation in degrees (the file's plus the turn) |
 | `mode`, `gain` | `exact` or `curve`; pixels per count at low speed |
 | `segment`, `beside` | monitor, side, crossing span, device span (PC pixels) |
 | `position` | the tracked cursor range in the display's view space: x low, x high, y low, y high |
@@ -469,6 +469,7 @@ was found), `config_error`, `capture_error`,
 | `enter [SERIAL\|NAME]` | move the input to that device (or the last used device) |
 | `release` | bring input back to the computer |
 | `pause`, `resume` | pause or resume cursor crossing |
+| `rotate 0\|90\|180\|270\|next [SERIAL\|NAME]` | the device's display was turned: `0` is the orientation its files were measured in, the others turn it that far in the direction of the touch rotation, `next` adds 90. Its width and height swap and its touch rotation turns with it, so nothing has to be measured again; the cursor comes back to the computer and the next entry takes the corner reference. Without a device it is the one that had the input last. Nothing tells the daemon how the display is held, so this is asked for by hand (or by a desktop shortcut); the turn is forgotten when the device is opened again |
 | `resync` | re-reference the corner reference on the next crossing |
 | `rescan` | look for phones and boards now and wait for the result. A scan is made when the daemon starts and when asked (no automatic background scanning); the first one and the ones asked for also search the serial ports for boards ([Boards](#boards)); the scans after a failure, `reload` or `connect` do not. A scan sends a request to every USB device, so none is made while a device has the input |
 | `reload` | read the configuration files again; a device that is open stays open unless how it was opened changed (the mouse buttons, the proxy, its port), and then it is opened again; its mouse, keyboard, media and touch inputs are added or removed without opening it again; no other device is opened |

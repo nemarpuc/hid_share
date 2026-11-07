@@ -34,6 +34,11 @@ calls `rotateDelta`). Confirmed on a Galaxy Tab S11 in rotation 90. The size
 is shown, so the position is tracked without knowing how the device is turned
 and nothing is sent turned.
 
+When the display is turned by `T` (0, 90, 180 or 270, the `rotate` command), the tracked size
+swaps to `H x W` for 90 and 270 and the touch rotation becomes `(t + T) mod 360`. The touchscreen's
+raw size `Wr x Hr` is the same in every case (swapping the shown size and turning by 90 cancel), so
+its Node stays as it is and nothing is re-attached.
+
 ## Touch
 
 A touchscreen reports absolute positions in its own axes, `Wr x Hr` (the real

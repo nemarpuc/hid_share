@@ -329,9 +329,18 @@ void draw_beta_tab(App& app, DeviceConfig& device) {
         app.message = app.failed ? (answer.rfind("error=", 0) == 0 ? answer.substr(6) : answer)
                                  : "Tapped a quarter in from the top left corner.";
     }
+    ImGui::SameLine();
+    // The display was turned: width, height and touch rotation follow at once,
+    // nothing is measured again. Nothing tells the daemon how it is held.
+    if (ImGui::Button("Display was turned 90 degrees")) {
+        const std::string answer = command(app, "rotate next " + device.serial);
+        app.failed = answer != "ok";
+        app.message = app.failed ? (answer.rfind("error=", 0) == 0 ? answer.substr(6) : answer)
+                                 : "The display's size and touch now follow the turn.";
+    }
     ImGui::EndDisabled();
     if (app.dirty)
-        look::dim("Apply first: the test tap uses what the daemon runs with.");
+        look::dim("Apply first: the test tap and the turn use what the daemon runs with.");
     if (ImGui::CollapsingHeader("Touchscreen descriptor (HID)")) {
         look::dim("The values of the touchscreen's HID descriptor; x and y follow the real size. "
                   "A row left empty takes the ordinary value of the link. Pressure, width, height, "

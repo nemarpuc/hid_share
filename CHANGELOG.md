@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0 - 2026-11-07
+
+- New command `rotate 0|90|180|270|next [DEVICE]` and a **Display was turned 90 degrees** button (Screen tab, Beta): when a device's display is turned, its tracked width and height swap and its touch rotation follows, so nothing has to be measured or typed again. The size in the files stays the one of the orientation it was measured in. Nothing tells the daemon how a display is held, so the turn is asked for by hand; it is forgotten when the device is opened again. `status` has a new `turn` line and `size` is the size as held now. Not run on a device.
+
 ## 0.6.2 - 2026-11-07
 
 - Fixed `MIMHID_ERR_OVERFLOW` (`transport.maximum_report_bytes`) when opening a board whose reports are shorter than libmimhid's 1024 bytes, such as a full-speed RP2040 or RP2350 (64 bytes). The board is now asked for its own limit and opened again with it. Not run against a board.
