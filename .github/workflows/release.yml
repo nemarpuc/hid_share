@@ -32,28 +32,28 @@ jobs:
             aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
             aoahid_sha256: b51c5f2f9e8bdcc1acd854ffe745e2f70f77862a2aea9ca503da060a015dcde7
             mimhid_asset: libmimhid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
-            mimhid_sha256: c38214eb2790e8106b107b3f4680751bdb8b22b9ea257f8dd3bfd22cf1b038fe
+            mimhid_sha256: 876616859ac076d7f7af54b1d710e51d36532139953a27d7fecf0b02731d7c9c
           - os: windows-2022
             platform: windows
             name: windows-x86_64
             aoahid_asset: libaoahid-*-windows-x86_64-shared.zip
             aoahid_sha256: 7ee281347d14e30a92540ab0ae88adb609b6af2da4af112c2975201ff284419b
             mimhid_asset: libmimhid-*-windows-x86_64-shared.zip
-            mimhid_sha256: d5714b20d31167b6a07a115562d2e3f724ef33d24b5914dabb644e5e73672284
+            mimhid_sha256: 998c281faca5f54c43a1743c7d40e7ec3b6120152e901092a89406643155110e
           - os: macos-15
             platform: macos
             name: macos-arm64
             aoahid_asset: libaoahid-*-macos-arm64-shared.tar.gz
             aoahid_sha256: 9c4ce83ba3b313c00d2888a5ea6bfb1b7abf9f19c0c2120859bdda6327d6c65a
             mimhid_asset: libmimhid-*-macos-arm64-shared.tar.gz
-            mimhid_sha256: fbbdeada4e5d12598da6a4c114d2a27586dbc53ff5ba9c2787eba8a3b4bf8cbb
+            mimhid_sha256: 7b845a0e982f8bcc464cd7ac00fa6a5a29555e36fa575c93ee85167c3e3bf890
           - os: macos-15-intel
             platform: macos
             name: macos-x86_64
             aoahid_asset: libaoahid-*-macos-x86_64-shared.tar.gz
             aoahid_sha256: 4dd285d28fa4fca4a0838ce8e6f53d9ea63a36ca1b8968e3c2202f4a69002d28
             mimhid_asset: libmimhid-*-macos-x86_64-shared.tar.gz
-            mimhid_sha256: 901a5c833b1502aa13f6d8c2801c29c0c1b1ac8ea124db437c804b874de4bbd1
+            mimhid_sha256: 7b10476b2fbf85c0cfdf3bd0fd4023c116e98f49fc19a748d9b7ac432d8a0cab
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
