@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Builds against libmimhid 0.1.0 and libaoahid 0.1.0 (their version lines restarted; the old releases are gone). A board of another firmware version is told by `firmware_compatible`, since the protocol number no longer exists. `[mim] baud` takes any rate up to 2,147,483,647: the search can find 7,812,500 on an RP2040, which the old limit of 4,000,000 refused. The CI and release pins still name the old assets and must move to the 0.1.0 assets (with their SHA-256) before the next release.
+
 ## 0.5.0
 
 - Builds against libmimhid 2.0.0 and libaoahid 2.0.0 as re-released on 2026-10-29. Both Devices

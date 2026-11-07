@@ -198,8 +198,8 @@ constexpr ConfigKey table[] = {
      "The board's serial port: /dev/ttyUSB0, or a /dev/serial/by-id/ path that stays the same "
      "when the board is plugged in again, or COM3. The device's serial is made from its last "
      "part, so it is set when the device is added.", true},
-    {S::device, "mim", "baud", "Board", K::integer, "1..4000000", "baud", "",
-     "The serial line rate of this board, one of libmimhid's rates (115200 to 4000000). Adding "
+    {S::device, "mim", "baud", "Board", K::integer, "1..2147483647", "baud", "",
+     "The serial line rate of this board, any rate the board's UART makes (libmimhid refuses one the link does not carry). Adding "
      "the board from the search (rescan) writes the fastest rate the search saw the board and "
      "its serial adapter carry; there is no default."},
     {S::device, "usb", "vendor_id", "Board USB", K::text, "0x0001..0xFFFF", "", "0x1209",

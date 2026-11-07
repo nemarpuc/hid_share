@@ -325,7 +325,7 @@ window; whatever the mouse does not give returns to its default.
 
 | Key | Default | |
 | --- | --- | --- |
-| `baud` | empty | the serial line rate of this board, one of libmimhid's rates (115200, 230400, 460800, 921600, 1000000, 1500000, 2000000, 3000000, 4000000). Adding the board from the search (`rescan`) writes the fastest rate the search saw the board and its serial adapter carry; a rate they do not carry is refused when the board is opened. Boards differ, so it is the board's own, not the computer's |
+| `baud` | empty | the serial line rate of this board, any rate the board's UART makes (the RP2040 reaches 7,812,500); libmimhid refuses one the link does not carry. Adding the board from the search (`rescan`) writes the fastest rate the search saw the board and its serial adapter carry; a rate they do not carry is refused when the board is opened. Boards differ, so it is the board's own, not the computer's |
 | `port` | empty | the board's serial port: `/dev/ttyUSB0`, a `/dev/serial/by-id/` path (it stays the same when the board is plugged in again) or `COM3`. The device's `serial` is `mim-` and the end of this, with anything a serial may not hold turned into `_`; a file whose serial is another is refused. It is set when the device is added and is not typed in the settings window |
 | `vendor_id`, `product_id` | `0x1209`, `0x0001` | the ids the board announces to its target, 0x0001 to 0xFFFF |
 | `manufacturer`, `product` | `Generic`, `USB Input Device` | the strings it announces, printable ASCII, at most 31 characters |

@@ -832,7 +832,7 @@ class MimBackend final : public Backend {
                     std::to_string(info->version_minor) + "." +
                     std::to_string(info->version_patch) + ")";
             // It answers, but cannot be opened until it is flashed again.
-            if (info->protocol_version != MIMHID_PROTOCOL_VERSION) {
+            if (!info->firmware_compatible) {
                 text += ": flash the libmimhid " + std::to_string(MIMHID_VERSION_MAJOR) + "." +
                         std::to_string(MIMHID_VERSION_MINOR) + "." +
                         std::to_string(MIMHID_VERSION_PATCH) + " firmware";

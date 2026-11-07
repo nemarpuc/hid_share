@@ -446,7 +446,7 @@ bool set_mim_device(DeviceConfig& d, const std::string_view key, const std::stri
         return to_port_path(value, d.mim.port);
     if (key == "baud") {
         int number = 0;
-        if (!value.empty() && !to_int(value, 1, 4000000, number))
+        if (!value.empty() && !to_int(value, 1, 2147483647, number))
             return false;
         d.mim.baud = static_cast<uint32_t>(value.empty() ? 0 : number);
         return true;

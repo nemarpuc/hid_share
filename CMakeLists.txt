@@ -42,10 +42,10 @@ function(hid_share_warnings target)
 endfunction()
 
 # 2.0.0 is the first libaoahid that takes every wait as an argument of the call
-# (the vendored aoahid_adb_proxy 4.0.0 needs it too).
-find_package(aoahid 2.0.0 CONFIG REQUIRED)
-# The board (MIM) side; 2.0.0 is the first libmimhid with transport.linux_hid and initial values.
-find_package(mimhid 2.0.0 CONFIG REQUIRED)
+# (the vendored aoahid_adb_proxy needs it too).
+find_package(aoahid 0.1.0 CONFIG REQUIRED)
+# The board (MIM) side; 0.1.0 is the first libmimhid of the restarted version line.
+find_package(mimhid 0.1.0 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 add_subdirectory(src)
