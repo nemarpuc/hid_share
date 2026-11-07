@@ -109,7 +109,7 @@ Adding or removing the mouse, keyboard, media keys or touchscreen of an open
 board makes it detach from the other machine and attach again once.
 
 **With a phone (AOA).** Install [libaoahid](https://github.com/nemarpuc/libaoahid/releases)
-4.0 or newer and its udev rule, so your user can open the phone
+0.1 or newer and its udev rule, so your user can open the phone
 ([libaoahid PORTING.md](https://github.com/nemarpuc/libaoahid/blob/main/docs/PORTING.md#linux)).
 Plug the phone in and press the refresh icon. It appears as `+ ...`; press it (or run
 `hid_share connect <serial>`) to give it a file and open it. Its **Setup** tab then
@@ -254,12 +254,19 @@ to device.
 
 | Platform | Backend | Crosses at the edge | Notes |
 | --- | --- | --- | --- |
-| Linux, X11 (any desktop) | `x11` | yes | |
+| Linux, X11 (any desktop; x86_64, aarch64) | `x11` | yes | |
 | Linux, Wayland: GNOME, KDE Plasma 6.1+ | `portal` | yes | asks for permission once |
 | Linux, Wayland: Sway, Hyprland, other wlroots | `layer_shell` | yes | |
 | Linux, anything else | `evdev` | hotkey only | needs read access to `/dev/input` |
-| Windows | `windows` | yes | the phone needs a WinUSB driver |
+| Windows (x86_64, arm64) | `windows` | yes | the phone needs a WinUSB driver |
 | macOS | `macos` | yes | needs the Accessibility permission |
+
+**Release archives** (GitHub Releases): `linux-x86_64`, `linux-aarch64`, `macos-arm64`,
+`macos-x86_64`, `windows-x86_64`, `windows-arm64`, with `SHA256SUMS`. The Linux ones are
+built on Debian 12 and need glibc 2.36 or newer (Debian 12, Ubuntu 23.04, Fedora 37,
+Arch and later) and, installed from your distribution, `libusb-1.0`, `libei` (`libei1`),
+`libdbus-1`, `libwayland-client` and `libxcb`. `linux-aarch64` and `windows-arm64` are
+built and tested in CI only; they have not been run on hardware.
 
 Details, permissions and limits: [docs/PLATFORMS.md](docs/PLATFORMS.md). How it
 shares a screen edge with your desktop's own edge features:

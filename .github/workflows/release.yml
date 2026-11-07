@@ -26,7 +26,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux is built in Debian 12 (glibc 2.36, the oldest with libei), so the
+          # programs run on it and on anything newer, not only on the runner's own release.
           - os: ubuntu-24.04
+            container: debian:12
             platform: linux
             name: linux-x86_64
             aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
@@ -54,19 +57,39 @@ jobs:
             aoahid_sha256: 4dd285d28fa4fca4a0838ce8e6f53d9ea63a36ca1b8968e3c2202f4a69002d28
             mimhid_asset: libmimhid-*-macos-x86_64-shared.tar.gz
             mimhid_sha256: 7b10476b2fbf85c0cfdf3bd0fd4023c116e98f49fc19a748d9b7ac432d8a0cab
+          - os: ubuntu-24.04-arm
+            container: debian:12
+            platform: linux
+            name: linux-aarch64
+            aoahid_asset: libaoahid-*-linux-aarch64-ubuntu22.04-shared.tar.gz
+            aoahid_sha256: 57a098bc1357159fd26d32940d2011355321f35f44c3a5e26636ae3a6a281a92
+            mimhid_asset: libmimhid-*-linux-aarch64-ubuntu22.04-shared.tar.gz
+            mimhid_sha256: c769f7461f373cedc0a3da0c3bc0aeb629fd958ec120bf7e2304a10e21abbe8d
+          - os: windows-11-arm
+            platform: windows
+            cmake_arch: ARM64
+            name: windows-arm64
+            aoahid_asset: libaoahid-*-windows-arm64-shared.zip
+            aoahid_sha256: 5435e0850d04683faa5a4d926b02f6e8a3620916981f54cb573bd27cba7a03c7
+            mimhid_asset: libmimhid-*-windows-arm64-shared.zip
+            mimhid_sha256: c7150a4414f37bd14430357ae210f9887cadb529f9bbe66c28f3c5dd42279959
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     steps:
-      - uses: actions/checkout@v4
-
       - name: Install build dependencies
         if: matrix.platform == 'linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y ninja-build pkg-config \
+          SUDO=""
+          if [ "$(id -u)" -ne 0 ]; then SUDO=sudo; fi
+          $SUDO apt-get update
+          $SUDO apt-get install --no-install-recommends -y ca-certificates curl git gh cmake g++ \
+            make ninja-build pkg-config \
             libwayland-dev libwayland-bin libdbus-1-dev libei-dev \
             libxcb1-dev libxcb-xfixes0-dev libxcb-xinput-dev libxcb-randr0-dev \
             libxkbcommon-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev \
             libxi-dev libxext-dev libgl1-mesa-dev
+
+      - uses: actions/checkout@v4
 
       - name: Download libaoahid release asset
         shell: bash
@@ -150,7 +173,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$AOAHID_PREFIX;$MIMHID_PREFIX"
+          arch=()
+          if [ -n "${{ matrix.cmake_arch }}" ]; then arch=(-A "${{ matrix.cmake_arch }}"); fi
+          cmake -S . -B build "${arch[@]}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$AOAHID_PREFIX;$MIMHID_PREFIX"
           cmake --build build --config Release --parallel
           ctest --test-dir build --output-on-failure -C Release
 
@@ -223,7 +248,12 @@ jobs:
           sha256sum hid-share-* > SHA256SUMS
           version="${REF_NAME#v}"
           # The notes are this version's section of the changelog.
-          awk -v v="## ${version}" '$0 == v {on = 1; next} /^## / {on = 0} on' \
+          # The heading is "## X.Y.Z", optionally followed by " - date".
+          awk -v v="## ${version}" \
+            'index($0, v) == 1 && (length($0) == length(v) || substr($0, length(v) + 1, 1) == " ") {on = 1; next} /^## / {on = 0} on' \
             ../CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::CHANGELOG.md has no section for ${version}."; exit 1
+          fi
           gh release create "$REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$REF_NAME" \
             --notes-file notes.md hid-share-* SHA256SUMS
