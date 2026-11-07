@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2 - 2026-11-07
+
+- Fixed `MIMHID_ERR_OVERFLOW` (`transport.maximum_report_bytes`) when opening a board whose reports are shorter than libmimhid's 1024 bytes, such as a full-speed RP2040 or RP2350 (64 bytes). The board is now asked for its own limit and opened again with it. Not run against a board.
+
 ## 0.6.1 - 2026-11-07
 
 - New release archives: `linux-aarch64` and `windows-arm64`, the two platforms libaoahid and libmimhid already shipped. They are built and tested in CI; neither has been run on hardware.

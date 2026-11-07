@@ -761,7 +761,8 @@ class MimBackend final : public Backend {
         mimhid_device_config device{};
         mimhid_device_config_init(&device);
         device.transport.baud_rate = mim.baud;
-        // The largest report libmimhid builds; the board refuses any it cannot take.
+        // The largest report libmimhid builds. A board that holds less (a full-speed
+        // chip takes 64) is asked for its limit below and opened again with it.
         device.transport.maximum_report_bytes = MIMHID_HOST_MAX_REPORT_BYTES;
         // transport.linux_hid keeps the Linux HID parser limits of the initializer.
         // The Nodes are fixed and range-checked by the profile factories.
@@ -791,7 +792,14 @@ class MimBackend final : public Backend {
         device.transport.log_level = MIMHID_LOG_DISABLED;
 
         mimhid_device* opened = nullptr;
-        const mimhid_result result = mimhid_device_open(path.c_str(), &device, &opened);
+        mimhid_result result = mimhid_device_open(path.c_str(), &device, &opened);
+        if (result == MIMHID_ERR_OVERFLOW) {
+            const uint32_t limit = board_report_limit(path, device);
+            if (limit != 0U) {
+                device.transport.maximum_report_bytes = limit;
+                result = mimhid_device_open(path.c_str(), &device, &opened);
+            }
+        }
         if (result != MIMHID_OK) {
             error = "the board could not be opened: " + describe(result);
             return nullptr;
@@ -806,6 +814,25 @@ class MimBackend final : public Backend {
     }
 
   private:
+    // The largest report the board at path takes, learned by opening it with the
+    // smallest limit; 0 when that fails too. The limit never exceeds libmimhid's.
+    [[nodiscard]] static uint32_t board_report_limit(const std::string& path,
+                                                     mimhid_device_config config) {
+        config.transport.maximum_report_bytes = 1U;
+        mimhid_device* probe = nullptr;
+        if (mimhid_device_open(path.c_str(), &config, &probe) != MIMHID_OK)
+            return 0U;
+        mimhid_board_limits limits{};
+        limits.struct_size = static_cast<uint32_t>(sizeof(limits));
+        const bool known = mimhid_device_limits(probe, &limits) == MIMHID_OK;
+        static_cast<void>(mimhid_device_close(probe, link_timeout_ms, close_drain_timeout_ms));
+        if (!known)
+            return 0U;
+        return limits.max_report_bytes < MIMHID_HOST_MAX_REPORT_BYTES
+                   ? limits.max_report_bytes
+                   : static_cast<uint32_t>(MIMHID_HOST_MAX_REPORT_BYTES);
+    }
+
     struct Listed {
         std::string path;
         std::string description;
