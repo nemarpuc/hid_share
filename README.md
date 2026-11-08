@@ -71,7 +71,7 @@ itself: it only lists the ones that have a file, and what it found.
 
 **With a board (MIM).** Flash the board and wire its serial port as
 [libmimhid's quick start](https://github.com/nemarpuc/libmimhid/blob/main/docs/QUICKSTART.md)
-says (libmimhid 1.3.3 firmware), and give your user access to the serial port.
+says (libmimhid 0.2.0 firmware), and give your user access to the serial port.
 Then, in the settings window (`hid_share_gui`):
 
 1. Start the daemon (the button at the bottom left). As it starts, and again when you
@@ -85,7 +85,7 @@ Then, in the settings window (`hid_share_gui`):
    each step:
    - what the other computer sees: the name and ids the board shows as a USB
      device (one click copies them from a mouse or touchscreen plugged in here;
-     left empty they are the test id 1209:0001, "Generic", "USB Input Device"); or
+     nothing is assumed: every value must be given); or
      present a USB keyboard or mouse plugged in here as the board's own, read whole
      (ids, interfaces, report descriptors) with "Clone a plugged-in device", for your own
      testing only (its looks are copied, not its software);
@@ -236,14 +236,19 @@ serial = mim-ttyUSB0
 name = Gaming PC
 link = mim
 
-[mim]
+[mim]                  ; every key of [mim], [usb] and [usb.*] is required (docs/CONFIG.md); nothing is assumed
 port = /dev/ttyUSB0    ; or a /dev/serial/by-id/ path, which survives replugging
+baud = ...
+handshake_timeout_ms = ...    ; also link_, reconnect_, drain_ and ready_timeout_ms
+linux_descriptor_bytes = ...  ; also linux_fields_per_report, _global_stack_depth, _report_size_bits, _usages, _report_data_bits
 
-[usb]                  ; what the board announces; left out: the test id 1209:0001, "Generic", "USB Input Device"
-vendor_id = 0x....     ; give both ids or neither
+[usb]                  ; what the board announces
+vendor_id = 0x....
 product_id = 0x....
 manufacturer = ...
 product = ...
+language_id = 0x....   ; also bcd_usb, ep0_max_packet_size, bcd_device, max_power_ma
+                       ; and, in [usb.mouse] etc., poll_interval_ms, ep_in_size, ep_out_size, bcd_hid, country_code
 ```
 
 Several devices have a file each under `settings/device/`, and can be arranged beside
@@ -304,7 +309,7 @@ shares a screen edge with your desktop's own edge features:
 
 ## Building
 
-Requires CMake 3.22, a C++20 compiler, libaoahid 0.1 and libmimhid 0.1 (a later 0.x needs a new hid_share). On Linux each
+Requires CMake 3.22, a C++20 compiler, libaoahid 0.1 and libmimhid 0.2 (a later 0.x needs a new hid_share). On Linux each
 backend is built when its libraries are found:
 
 | Backend | Packages (Debian names) |

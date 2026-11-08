@@ -318,47 +318,67 @@ the mouse, keyboard and media keys; a change of the device's `real_width` or
 
 ### `[mim]` and `[usb]` (a board)
 
-Written for a device with `link = mim`, and read for no other. A `[usb]` value
-left out takes the default in the table; one given is used exactly. `baud` and
-`port` have none: they are facts of the hardware. The default ids are the
-pid.codes test id 1209:0001, which is for in-house testing only and must not be
-on a device that is redistributed, sold or manufactured; no other maker's id or
-name is a default, and the device's status says `usb_test_id=yes` while it is in
-use. `vendor_id` and `product_id` go together: both left out are the test id,
-one given alone is not completed, and the board is not opened until the other is
-given too (the status names it). A mouse's values can be copied from the settings
-window; whatever the mouse does not give returns to its default.
+Written for a device with `link = mim`, and read for no other. **Every key in
+this section is required** (except `serial`, `serial_from_chip_id`,
+`self_powered`, `remote_wakeup` and `configuration`, which are choices with an
+honest "none"): nothing is filled in for a value left out, and a board that lacks
+one is not opened; the status and the settings window name each missing key.
+This follows libmimhid 0.2.0, whose `*_init` functions only zero a structure.
+The pid.codes test id 1209:0001 is for in-house testing only and must not be on a
+device that is redistributed, sold or manufactured; it is no longer assumed, so
+give your own ids. A mouse's values can be copied from the settings window.
 
-| Key | Default | |
-| --- | --- | --- |
-| `baud` | empty | the serial line rate of this board, any rate the board's UART makes (the RP2040 reaches 7,812,500); libmimhid refuses one the link does not carry. Adding the board from the search (`rescan`) writes the fastest rate the search saw the board and its serial adapter carry; a rate they do not carry is refused when the board is opened. Boards differ, so it is the board's own, not the computer's |
-| `port` | empty | the board's serial port: `/dev/ttyUSB0`, a `/dev/serial/by-id/` path (it stays the same when the board is plugged in again) or `COM3`. The device's `serial` is `mim-` and the end of this, with anything a serial may not hold turned into `_`; a file whose serial is another is refused. It is set when the device is added and is not typed in the settings window |
-| `vendor_id`, `product_id` | `0x1209`, `0x0001` | the ids the board announces to its target, 0x0001 to 0xFFFF |
-| `manufacturer`, `product` | `Generic`, `USB Input Device` | the strings it announces, UTF-8 (any language), at most 126 characters |
-| `language_id` | `0x0409` | the language id (LANGID) of every string it announces, 0x0001 to 0xFFFF |
-| `serial` | empty | the serial number it announces; empty announces none |
-| `serial_from_chip_id` | `false` | announce the chip's own id as the serial number when `serial` is empty |
-| `bcd_device` | empty | the device release number it announces, 0x0001 to 0xFFFF; empty announces 0x0100 |
-| `max_power_ma` | empty | the current it says it draws, 1 to 500 mA; empty announces 100 |
-| `self_powered`, `remote_wakeup` | `false` | the two bits of the configuration's attributes |
-| `configuration` | empty | the configuration string it announces; empty announces none |
+When the board presents a clone (`[clone]`), the clone's ids, strings, power
+values and interface values are used instead of `vendor_id`, `product_id`,
+`manufacturer`, `product`, `bcd_device`, `max_power_ma` and every `[usb.*]` key,
+and those are not required; the link keys, `bcd_usb`, `ep0_max_packet_size` and
+`language_id` still are.
+
+| Key | |
+| --- | --- |
+| `baud` | the serial line rate of this board, any rate the board's UART makes (the RP2040 reaches 7,812,500); libmimhid refuses one the link does not carry. Adding the board from the search (`rescan`) writes the fastest rate the search saw the board and its serial adapter carry. Boards differ, so it is the board's own, not the computer's |
+| `port` | the board's serial port: `/dev/ttyUSB0`, a `/dev/serial/by-id/` path (it stays the same when the board is plugged in again) or `COM3`. The device's `serial` is `mim-` and the end of this, with anything a serial may not hold turned into `_`; a file whose serial is another is refused. It is set when the device is added and is not typed in the settings window |
+| `handshake_timeout_ms` | how long the first message of a link waits for the board's answer, 1 to 600000 |
+| `link_timeout_ms` | how long a command waits for the board's answer, and a report for its write to make progress |
+| `reconnect_timeout_ms` | how long to wait for the board's new enumeration after its Nodes change |
+| `drain_timeout_ms` | how long a close waits for the neutral reports to leave |
+| `ready_timeout_ms` | how long to wait for the target to mount the board after it re-attaches |
+| `linux_descriptor_bytes`, `linux_fields_per_report`, `linux_global_stack_depth`, `linux_report_size_bits`, `linux_usages`, `linux_report_data_bits` | the limits of the target's Linux HID parser that libmimhid checks a descriptor against (`transport.linux_hid`); they are the target kernel's, so they are yours, 1 and up |
+| `vendor_id`, `product_id` | the ids the board announces to its target, 0x0001 to 0xFFFF |
+| `manufacturer`, `product` | the strings it announces, UTF-8 (any language), at most 126 characters |
+| `language_id` | the language id (LANGID) of every string it announces, 0x0001 to 0xFFFF |
+| `bcd_usb` | the USB release it announces, 0x0001 to 0xFFFF (0x0200 for USB 2.0) |
+| `ep0_max_packet_size` | the control endpoint's packet size: 8, 16, 32 or 64 (64 at high speed) |
+| `serial` | the serial number it announces; empty announces none |
+| `serial_from_chip_id` | `false` or `true`: announce the chip's own id as the serial number when `serial` is empty |
+| `bcd_device` | the device release number it announces, 0x0001 to 0xFFFF |
+| `max_power_ma` | the current it says it draws, 1 to 500 mA |
+| `self_powered`, `remote_wakeup` | `false` or `true`: the two bits of the configuration's attributes |
+| `configuration` | the configuration string it announces; empty announces none |
+
+Endpoint numbers follow the interface number (IN `0x81 + n`, OUT `0x01 + n`); a
+Node whose number is above the board's highest endpoint number (reported by the
+board, and by `mimhid_board_limits.max_endpoint_number`) is refused when opened
+instead of failing at the target's `SET_CONFIGURATION`. The same check applies to
+the endpoints of a clone.
 
 ### `[usb.mouse]`, `[usb.keyboard]`, `[usb.media]`, `[usb.touch]` (a board's interfaces)
 
 Each Node of a board is one USB interface of its composite device, and each
-section holds that interface's own values. Every key is optional and is written
-to the file only when set; one left out takes the ordinary value. The sections
-need no `[usb]` values, and the same key means the same in all four.
+section holds that interface's own values. `poll_interval_ms`, `ep_in_size`,
+`ep_out_size`, `bcd_hid` and `country_code` are required for every Node the
+board presents (not for a clone's); the others may be left out. The same key
+means the same in all four.
 
-| Key | Default | |
-| --- | --- | --- |
-| `interface_number` | empty | 0 to 255 and below the board's interface count; empty gives the lowest numbers no pinned Node uses, in the order mouse, keyboard, media, touchscreen. Nodes with the same number share one interface (one HID interface with a Report ID for each), and then every one of them must have its own `report_id`; without that the board is not opened and the status says which |
-| `interface_name` | empty | the interface string, UTF-8 (any language), at most 126 characters; empty announces none |
-| `poll_interval_ms` | empty | how often the target polls, 1 to 255 ms; empty takes the ordinary interval |
-| `ep_in_size`, `ep_out_size` | empty | endpoint sizes in bytes, any value from 1 to 1024 as given, not rounded (the OUT endpoint also 0 for none); empty takes the ordinary sizes. A board takes only what its chip holds (64 at full speed, 1024 at high speed) and refuses more |
-| `bcd_hid` | empty | the HID release number, 0x0001 to 0xFFFF |
-| `country_code` | empty | 0 to 255 |
-| `report_id` | empty | 1 to 255; empty gives the report no Report ID. Nodes that share an interface must all have one, all different; Nodes on interfaces of their own may use any, the same too. Nothing is numbered for you |
+| Key | |
+| --- | --- |
+| `interface_number` | 0 to 255 and below the board's interface count; empty gives the lowest numbers no pinned Node uses, in the order mouse, keyboard, media, touchscreen (this is a layout, not a chip value). Nodes with the same number share one interface (one HID interface with a Report ID for each), and then every one of them must have its own `report_id`; without that the board is not opened and the status says which |
+| `interface_name` | the interface string, UTF-8 (any language), at most 126 characters; empty announces none |
+| `poll_interval_ms` | **required**, how often the target polls, 1 to 255 ms |
+| `ep_in_size`, `ep_out_size` | **required**, endpoint sizes in bytes, any value from 1 to 1024 as given, not rounded (the OUT endpoint also 0 for none). A board takes only what its chip holds (64 at full speed, 1024 at high speed) and refuses more |
+| `bcd_hid` | **required**, the HID release number, 0x0001 to 0xFFFF |
+| `country_code` | **required**, 0 to 255 |
+| `report_id` | 1 to 255; empty gives the report no Report ID. Nodes that share an interface must all have one, all different; Nodes on interfaces of their own may use any, the same too. Nothing is numbered for you |
 
 ### `[clone]` (a board presents a plugged-in device)
 
@@ -444,7 +464,6 @@ the daemon keeps, so asking never holds up the input. Per device the keys are
 | `position` | the tracked cursor range in the display's view space: x low, x high, y low, y high |
 | `touch`, `touch_error` | `off`, `on`, or `not set:` and what the touchscreen still needs; with touch on, how far a tap can be from the cursor: the width of the tracked range, x then y |
 | `clone`, `clone_notes` | a board only, while it presents a plugged-in device (clone mode): what it was called when read, and what of it cannot be copied (separated by `\|`) |
-| `usb_test_id` | a board only: `yes` while it announces the test id 1209:0001 (in-house testing only), `no` when its ids are its own |
 | `reports`, `merged`, `depth` | USB reports sent; inputs summed into a report that was already waiting; reports waiting now |
 | `samples`, `queue_us`, `total_us` | over the last 256 reports (microseconds, as typical, 99 of 100, worst since opened): from an input reaching the daemon to the start of its USB call, and to the report's completion. The device's own delay is not included |
 | `realtime` | whether the sender thread got a real-time priority (needs `RLIMIT_RTPRIO`) |

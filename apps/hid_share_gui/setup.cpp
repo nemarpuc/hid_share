@@ -146,18 +146,13 @@ void row_for_key(App& app, DeviceConfig& device, const char* const section, cons
 } // namespace
 
 std::string board_missing(const DeviceConfig& device) {
-    std::string list;
-    const auto need = [&](const bool given, const char* name) {
-        if (given)
-            return;
-        list += (list.empty() ? "" : ", ") + std::string(name);
-    };
-    need(!device.mim.port.empty(), "serial port");
-    need(device.mim.baud != 0, "serial speed");
-    // Both ids left out are the test id (mim_of); one alone is not completed.
-    need((device.mim.vendor_id != 0) == (device.mim.product_id != 0),
-         "vendor id and product id together");
-    return list;
+    // Every value is the user's. The Nodes asked for are those the device does not switch off
+    // (a device that says nothing follows the global switches, which are on unless turned off).
+    const uint8_t wanted = static_cast<uint8_t>(
+        (device.mouse.value_or(true) ? 1U : 0) |
+        (device.keyboard.value_or(true) ? 2U : 0) |
+        (device.media.value_or(true) ? 4U : 0));
+    return board_missing(device.mim, wanted, device.clone.has_value());
 }
 
 namespace {
@@ -440,7 +435,7 @@ void draw_setup(App& app, DeviceConfig& device) {
         explain("Plug the board in and press the refresh icon above the list: every serial port\n"
                 "is asked whether a board answers. If it does not appear, check the TX, RX and\n"
                 "ground wires, the board's power, that you may open the port (group uucp or\n"
-                "dialout), and that the board runs the libmimhid 1.3.3 firmware.");
+                "dialout), and that the board runs the libmimhid 0.2.0 firmware.");
     } else {
         explain("Plug the phone in and press the refresh icon above the list.");
     }
@@ -450,8 +445,9 @@ void draw_setup(App& app, DeviceConfig& device) {
         const std::string missing = board_missing(device);
         step(++number, "What the other computer sees", missing.empty());
         if (missing.empty()) {
-            const MimDevice shown = mim_of(device);
-            const std::string name = shown.manufacturer + " " + shown.product;
+            const std::string name = device.clone
+                                         ? device.clone->device.manufacturer + " " + device.clone->device.product
+                                         : device.mim.manufacturer + " " + device.mim.product;
             explain(name.c_str());
         } else {
             explain("The board shows itself to the other computer as a USB device with a name\n"

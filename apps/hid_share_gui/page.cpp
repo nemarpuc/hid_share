@@ -210,8 +210,8 @@ void draw_usb_values(App& app, DeviceConfig& device) {
     if (device.clone)
         look::dim("A clone is presented: its ids, strings and power values are used instead of "
                   "the ones below, which come back when the clone is removed.");
-    look::dim("A row left empty takes the default shown in it. The default ids are the pid.codes "
-              "test id 1209:0001, for in-house testing only; give both ids or neither.");
+    look::dim("Every row here is required: nothing is filled in for a row left empty, and the "
+              "board is not opened until all are given. Use your own ids, not the pid.codes test id.");
     draw_copy_mouse(app, device);
     ImGui::Spacing();
     draw_row(app, KeyScope::device, "usb", "vendor_id", &device, "Vendor id (0x0001-0xFFFF)");
@@ -220,20 +220,23 @@ void draw_usb_values(App& app, DeviceConfig& device) {
     draw_row(app, KeyScope::device, "usb", "product", &device, "Product");
     if (ImGui::CollapsingHeader("Advanced")) {
         draw_row(app, KeyScope::device, "usb", "language_id", &device, "Language id of the strings");
+        draw_row(app, KeyScope::device, "usb", "bcd_usb", &device, "USB release (0x0200)");
+        draw_row(app, KeyScope::device, "usb", "ep0_max_packet_size", &device,
+                 "Control endpoint packet size");
         draw_row(app, KeyScope::device, "usb", "serial", &device, "Serial number announced");
         draw_row(app, KeyScope::device, "usb", "serial_from_chip_id", &device,
                  "Use the chip's id as the serial number");
         draw_row(app, KeyScope::device, "usb", "configuration", &device, "Configuration string");
         draw_row(app, KeyScope::device, "usb", "bcd_device", &device,
-                 "Device release (empty: 0x0100)");
+                 "Device release (0x0001-0xFFFF)");
         draw_row(app, KeyScope::device, "usb", "max_power_ma", &device,
-                 "Current drawn (empty: 100)");
+                 "Current drawn (1-500 mA)");
         draw_row(app, KeyScope::device, "usb", "self_powered", &device, "Self powered");
         draw_row(app, KeyScope::device, "usb", "remote_wakeup", &device, "Can wake the target");
     }
     if (ImGui::CollapsingHeader("USB interface of each input")) {
-        look::dim("Each input is one USB interface of the board. A row left empty takes the "
-                  "ordinary value.");
+        look::dim("Each input is one USB interface of the board. Every row but the name and "
+                  "the report id is required.");
         const std::pair<const char*, const char*> nodes[] = {{"Mouse", "usb.mouse"},
                                                              {"Keyboard", "usb.keyboard"},
                                                              {"Media keys", "usb.media"},
@@ -264,6 +267,22 @@ void draw_device_tab(App& app, DeviceConfig& device) {
     if (is_board(device)) {
         draw_row(app, KeyScope::device, "mim", "port", &device, "Serial port");
         draw_row(app, KeyScope::device, "mim", "baud", &device, "Serial speed");
+        if (ImGui::CollapsingHeader("Link waits and the target's Linux HID limits")) {
+            const std::pair<const char*, const char*> rows[] = {
+                {"handshake_timeout_ms", "First answer wait (ms)"},
+                {"link_timeout_ms", "Command / report wait (ms)"},
+                {"reconnect_timeout_ms", "Re-enumeration wait (ms)"},
+                {"drain_timeout_ms", "Close wait (ms)"},
+                {"ready_timeout_ms", "Target mount wait (ms)"},
+                {"linux_descriptor_bytes", "Linux: descriptor bytes"},
+                {"linux_fields_per_report", "Linux: fields per report"},
+                {"linux_global_stack_depth", "Linux: global stack depth"},
+                {"linux_report_size_bits", "Linux: report size bits"},
+                {"linux_usages", "Linux: usages"},
+                {"linux_report_data_bits", "Linux: report data bits"}};
+            for (const auto& [key, label] : rows)
+                draw_row(app, KeyScope::device, "mim", key, &device, label);
+        }
         const std::string missing = board_missing(device);
         if (!missing.empty())
             look::dim(("Not set: " + missing + ". It is not opened until they are.").c_str());

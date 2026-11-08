@@ -17,15 +17,15 @@ using K = KeyKind;
     {S::device, section, "interface_name", "Board USB interfaces", K::text,                     \
      "at most 126 characters", "", "", "The interface string of the " node "; empty: none."},    \
     {S::device, section, "poll_interval_ms", "Board USB interfaces", K::integer, "1..255",      \
-     "ms", "", "How often the target polls the " node "; empty takes the ordinary interval."},   \
+     "ms", "", "How often the target polls the " node "; required."},                         \
     {S::device, section, "ep_in_size", "Board USB interfaces", K::integer, "1..1024", "B",       \
-     "", "Size of the " node "'s IN endpoint; empty takes the ordinary size."},                 \
+     "", "Size of the " node "'s IN endpoint; required."},                                    \
     {S::device, section, "ep_out_size", "Board USB interfaces", K::integer, "0..1024",          \
-     "B", "", "Size of the " node "'s OUT endpoint, 0 for none; empty takes the ordinary one."},\
+     "B", "", "Size of the " node "'s OUT endpoint, 0 for none; required."},                  \
     {S::device, section, "bcd_hid", "Board USB interfaces", K::text, "0x0001..0xFFFF", "", "",  \
-     "The HID release number of the " node "; empty announces the ordinary one."},              \
+     "The HID release number of the " node "; required."},                                   \
     {S::device, section, "country_code", "Board USB interfaces", K::integer, "0..255", "", "",  \
-     "The country code of the " node "; empty announces 0."},                                   \
+     "The country code of the " node "; required (0: not localized)."},                      \
     {S::device, section, "report_id", "Board USB interfaces", K::integer, "1..255", "", "",     \
      "The Report ID of the " node "; empty: the report has no Report ID. Nodes that share an "   \
      "interface must all have one, all different."}
@@ -201,27 +201,52 @@ constexpr ConfigKey table[] = {
     {S::device, "mim", "baud", "Board", K::integer, "1..2147483647", "baud", "",
      "The serial line rate of this board, any rate the board's UART makes (libmimhid refuses one the link does not carry). Adding "
      "the board from the search (rescan) writes the fastest rate the search saw the board and "
-     "its serial adapter carry; there is no default."},
-    {S::device, "usb", "vendor_id", "Board USB", K::text, "0x0001..0xFFFF", "", "0x1209",
-     "The vendor id the board announces to its target. Left out, vendor_id and product_id "
-     "together are the pid.codes test id 1209:0001, which is for in-house testing only; give "
-     "both or neither."},
-    {S::device, "usb", "product_id", "Board USB", K::text, "0x0001..0xFFFF", "", "0x0001",
-     "The product id the board announces; see vendor_id."},
-    {S::device, "usb", "manufacturer", "Board USB", K::text, "at most 126 characters", "",
-     "Generic", "The manufacturer string the board announces."},
-    {S::device, "usb", "product", "Board USB", K::text, "at most 126 characters", "",
-     "USB Input Device", "The product string the board announces."},
-    {S::device, "usb", "language_id", "Board USB", K::text, "0x0001..0xFFFF", "", "0x0409",
-     "The language id (LANGID) of every string the board announces."},
+     "its serial adapter carry; required."},
+    {S::device, "mim", "handshake_timeout_ms", "Board", K::integer, "1..600000", "ms", "",
+     "How long the first message of a link waits for the board's answer; required."},
+    {S::device, "mim", "link_timeout_ms", "Board", K::integer, "1..600000", "ms", "",
+     "How long a command waits for the board's answer, and a report for its write to make "
+     "progress; required."},
+    {S::device, "mim", "reconnect_timeout_ms", "Board", K::integer, "1..600000", "ms", "",
+     "How long to wait for the board's new enumeration after a change of its inputs; required."},
+    {S::device, "mim", "drain_timeout_ms", "Board", K::integer, "1..600000", "ms", "",
+     "How long a close waits for the neutral reports to leave; required."},
+    {S::device, "mim", "ready_timeout_ms", "Board", K::integer, "1..600000", "ms", "",
+     "How long to wait for the target to mount the board's USB device; required."},
+    {S::device, "mim", "linux_descriptor_bytes", "Board", K::integer, "1..4294967295", "B", "",
+     "The Linux HID parser limit of the target: the largest report descriptor; required."},
+    {S::device, "mim", "linux_fields_per_report", "Board", K::integer, "1..4294967295", "", "",
+     "The Linux HID parser limit of the target: fields in one report; required."},
+    {S::device, "mim", "linux_global_stack_depth", "Board", K::integer, "1..4294967295", "", "",
+     "The Linux HID parser limit of the target: Push items in effect at once; required."},
+    {S::device, "mim", "linux_report_size_bits", "Board", K::integer, "1..4294967295", "bit", "",
+     "The Linux HID parser limit of the target: the largest Report Size item; required."},
+    {S::device, "mim", "linux_usages", "Board", K::integer, "1..18446744073709551615", "", "",
+     "The Linux HID parser limit of the target: Usages in one descriptor; required."},
+    {S::device, "mim", "linux_report_data_bits", "Board", K::integer, "1..18446744073709551615",
+     "bit", "", "The Linux HID parser limit of the target: the largest report; required."},
+    {S::device, "usb", "vendor_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",
+     "The vendor id the board announces to its target; required (no id is assumed)."},
+    {S::device, "usb", "product_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",
+     "The product id the board announces; required."},
+    {S::device, "usb", "manufacturer", "Board USB", K::text, "at most 126 characters", "", "",
+     "The manufacturer string the board announces; required."},
+    {S::device, "usb", "product", "Board USB", K::text, "at most 126 characters", "", "",
+     "The product string the board announces; required."},
+    {S::device, "usb", "language_id", "Board USB", K::text, "0x0001..0xFFFF", "", "",
+     "The language id (LANGID) of every string the board announces; required."},
+    {S::device, "usb", "bcd_usb", "Board USB", K::text, "0x0001..0xFFFF", "", "",
+     "The USB release the board announces (0x0200 for USB 2.0); required."},
+    {S::device, "usb", "ep0_max_packet_size", "Board USB", K::integer, "8|16|32|64", "B", "",
+     "The packet size of the board's control endpoint (64 at high speed); required."},
     {S::device, "usb", "serial", "Board USB", K::text, "at most 126 characters", "", "",
      "The serial number the board announces; empty announces none (unless serial_from_chip_id)."},
     {S::device, "usb", "serial_from_chip_id", "Board USB", K::boolean, "", "", "false",
      "Announce the board chip's own id as the serial number when serial is empty."},
     {S::device, "usb", "bcd_device", "Board USB", K::text, "0x0001..0xFFFF", "", "",
-     "The device release number the board announces; empty announces 0x0100."},
+     "The device release number the board announces; required."},
     {S::device, "usb", "max_power_ma", "Board USB", K::integer, "1..500", "mA", "",
-     "The current the board says it draws; empty announces 100."},
+     "The current the board says it draws; required."},
     {S::device, "usb", "self_powered", "Board USB", K::boolean, "", "", "false",
      "The board announces that it has a power supply of its own."},
     {S::device, "usb", "remote_wakeup", "Board USB", K::boolean, "", "", "false",
@@ -331,9 +356,6 @@ constexpr StatusKey status_table[] = {
      "The tracked cursor range in the display's view space."},
     {true, "touch", "Device", "", "",
      "off, on, or not set: followed by what the touchscreen still needs."},
-    {true, "usb_test_id", "Device", "", "",
-     "A board only: yes when it announces the test id 1209:0001, which is for in-house testing "
-     "only, no when it announces ids of its own."},
     {true, "clone", "Device", "", "",
      "A board only: the plugged-in device it presents as its own (clone mode); absent when it "
      "presents its own inputs."},

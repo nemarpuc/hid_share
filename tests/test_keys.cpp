@@ -253,6 +253,8 @@ TEST_CASE("every key in the table is accepted by the parser and read back") {
         {"usb.product_id", "1234"},
         {"usb.bcd_device", "0x0109"},
         {"usb.language_id", "0x0407"},
+        {"usb.bcd_usb", "0x0200"},
+        {"usb.ep0_max_packet_size", "64"},
         {"usb.max_power_ma", "480"},
         {"mim.baud", "3000000"},
         {"mim.port", "/dev/ttyUSB1"},

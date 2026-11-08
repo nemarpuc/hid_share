@@ -22,19 +22,10 @@ namespace {
 // Every value below is this application's policy, stated explicitly rather
 // than left to libmimhid's documented fallbacks (docs/API.md there).
 // The search waits this long for each answer, at each rate it tries.
+// How long one serial port is given to answer the search message.
 constexpr uint32_t discover_timeout_ms = 50U;
-// How long the serial link waits for a board's answer to a command, and for a
-// report to leave.
-constexpr uint32_t link_timeout_ms = 500U;
-constexpr uint32_t reconnect_timeout_ms = 3000U;
-constexpr uint32_t close_drain_timeout_ms = 1000U;
+// How long a queued report may keep the sender waiting for its fragments.
 constexpr uint32_t drain_deadline_ms = 600U;
-// The target's mount after the board re-attaches.
-constexpr uint32_t ready_timeout_ms = 5000U;
-constexpr uint16_t usb_bcd_device = 0x0100;
-constexpr uint16_t usb_language_id = 0x0409;
-constexpr uint32_t usb_max_power_ma = 100U;
-constexpr uint16_t hid_bcd = 0x0111;
 constexpr uint32_t touch_contacts = 2U;
 constexpr uint32_t touch_bits = 16U;
 
@@ -51,16 +42,6 @@ mimhid_integer_field field(const int32_t minimum, const int32_t maximum,
     value.bit_width = bits;
     return value;
 }
-
-// The waits of a call that re-enumerates the board: the link's answer time and the re-attach.
-mimhid_commit_timeouts commit_timeouts() noexcept {
-    mimhid_commit_timeouts timeouts{};
-    mimhid_commit_timeouts_init(&timeouts);
-    timeouts.control_timeout_ms = link_timeout_ms;
-    timeouts.reconnect_timeout_ms = reconnect_timeout_ms;
-    return timeouts;
-}
-const mimhid_commit_timeouts commit_waits = commit_timeouts();
 
 // The Report ID of a Node: none unless the user gave one.
 mimhid_report_id_option report_id_of(const NodeUsb& usb) noexcept {
@@ -179,27 +160,6 @@ std::string describe(const mimhid_result result) {
     return std::string(mimhid_result_name(result)) + " (" + field_name + ": " + reason + ")";
 }
 
-// The values a board cannot be opened without, which the user gives.
-std::string missing_values(const MimOptions& mim, const bool cloned) {
-    std::string list;
-    const auto need = [&](const bool given, const char* name) {
-        if (given)
-            return;
-        if (!list.empty())
-            list += ", ";
-        list += name;
-    };
-    need(mim.baud != 0, "baud");
-    // A clone brings its own ids and strings, and a device may have none of the strings.
-    if (!cloned) {
-        need(mim.vendor_id != 0, "vendor_id");
-        need(mim.product_id != 0, "product_id");
-        need(!mim.manufacturer.empty(), "manufacturer");
-        need(!mim.product.empty(), "product");
-    }
-    return list;
-}
-
 bool port_exists(const std::string& path) {
 #ifdef _WIN32
     static_cast<void>(path);
@@ -237,11 +197,16 @@ struct Registry {
 class MimPort final : public Port {
   public:
     MimPort(mimhid_device* device, std::string path, const unsigned buttons,
-            std::shared_ptr<Registry> registry)
+            std::shared_ptr<Registry> registry, const MimDevice& mim)
         : device_(device),
           path_(std::move(path)),
           buttons_(buttons),
-          registry_(std::move(registry)) {
+          registry_(std::move(registry)),
+          mim_(mim) {
+        // The waits of a call that re-enumerates the board: the link's answer time and the re-attach.
+        waits_.struct_size = static_cast<uint32_t>(sizeof(waits_));
+        waits_.control_timeout_ms = mim_.link_timeout_ms;
+        waits_.reconnect_timeout_ms = mim_.reconnect_timeout_ms;
         registry_->add(path_);
     }
     ~MimPort() override {
@@ -322,7 +287,7 @@ class MimPort final : public Port {
         // the wire instead of running one after another.
         for (size_t kind = 0; kind < node_kinds; ++kind) {
             if ((nodes & node_bit(static_cast<NodeKind>(kind))) != 0 &&
-                !ok(mimhid_node_submit(nodes_[kind], link_timeout_ms)))
+                !ok(mimhid_node_submit(nodes_[kind], mim_.link_timeout_ms)))
                 return false;
         }
         for (size_t kind = 0; kind < node_kinds; ++kind) {
@@ -402,9 +367,9 @@ class MimPort final : public Port {
             if (!open_node(static_cast<NodeKind>(kind), numbers[kind], options))
                 return false;
         }
-        if (!ok(mimhid_device_batch_end(device_, &commit_waits)))
+        if (!ok(mimhid_device_batch_end(device_, &waits_)))
             return false;
-        if (wanted != 0 && !ok(mimhid_device_wait_ready(device_, ready_timeout_ms)))
+        if (wanted != 0 && !ok(mimhid_device_wait_ready(device_, mim_.ready_timeout_ms)))
             return false;
         touch_size_ = options.touch ? options.touch_size : Size{};
         touch_hid_ = options.touch ? options.touch_hid : TouchHid{};
@@ -468,33 +433,49 @@ class MimPort final : public Port {
             return false;
         for (size_t i = 0; i < nodes.size(); ++i) {
             const CloneInterface& itf = shape.device.interfaces[nodes[i].source];
+            // What the plugged-in device said about this interface is all there is: a value it
+            // did not give is an error, not something to fill in.
+            if (itf.interval_ms == 0 || itf.ep_in_size == 0 || itf.bcd_hid == 0) {
+                error_ = "the clone's interface " + std::to_string(itf.number) +
+                         " has no " +
+                         (itf.interval_ms == 0 ? "poll interval"
+                          : itf.ep_in_size == 0 ? "IN endpoint size"
+                                                : "bcdHID");
+                return false;
+            }
             mimhid_node_config node{};
+            mimhid_node_config_init(&node);
             // The board numbers its interfaces without gaps, so the number is the place
-            // among those presented.
-            mimhid_node_config_init(&node, static_cast<uint8_t>(i));
+            // among those presented; its endpoints are numbered the same way.
+            node.iface.number = static_cast<uint8_t>(i);
+            node.iface.class_code = 0x03U; // HID, the only class the board opens
             node.iface.subclass = itf.boot_subclass;
             node.iface.protocol = itf.boot_protocol;
-            node.ep_in.poll_interval_ms = static_cast<uint8_t>(itf.interval_ms != 0 ? itf.interval_ms : 1U);
+            node.ep_in.address = static_cast<uint8_t>(0x81 + i);
+            node.ep_in.poll_interval_ms = static_cast<uint8_t>(itf.interval_ms);
             // The board's endpoints hold what its chip does (64 bytes at full speed).
             node.ep_in.max_packet_size = static_cast<uint16_t>(std::min(itf.ep_in_size, limits.max_endpoint_bytes));
-            if (node.ep_in.max_packet_size == 0)
-                node.ep_in.max_packet_size = 64U;
             node.ep_out.address = itf.ep_out_size > 0 ? static_cast<uint8_t>(0x01 + i) : 0U;
             node.ep_out.max_packet_size = static_cast<uint16_t>(std::min(itf.ep_out_size, limits.max_endpoint_bytes));
+            // The source device gives one interval for the interface; the OUT endpoint uses it too.
             node.ep_out.poll_interval_ms = node.ep_out.max_packet_size > 0 ? node.ep_in.poll_interval_ms : 0U;
-            node.iface.bcd_hid = itf.bcd_hid != 0 ? itf.bcd_hid : 0x0111;
+            node.iface.bcd_hid = itf.bcd_hid;
             node.iface.country_code = itf.country_code;
+            if (!endpoint_in_range(node.ep_in.address, limits.max_endpoint_number) ||
+                (node.ep_out.address != 0 &&
+                 !endpoint_in_range(node.ep_out.address, limits.max_endpoint_number)))
+                return false;
             node.iface.name = itf.name.empty() ? nullptr : itf.name.c_str();
             mimhid_node* opened = nullptr;
             if (!ok(mimhid_node_open_raw(device_, nodes[i].descriptor.data(),
-                                         nodes[i].descriptor.size(), &node, &commit_waits,
+                                         nodes[i].descriptor.size(), &node, &waits_,
                                          &opened)))
                 return false;
             clone_nodes_.push_back(opened);
         }
-        if (!ok(mimhid_device_batch_end(device_, &commit_waits)))
+        if (!ok(mimhid_device_batch_end(device_, &waits_)))
             return false;
-        if (!nodes.empty() && !ok(mimhid_device_wait_ready(device_, ready_timeout_ms)))
+        if (!nodes.empty() && !ok(mimhid_device_wait_ready(device_, mim_.ready_timeout_ms)))
             return false;
 
         reports_ = std::move(built);
@@ -534,7 +515,7 @@ class MimPort final : public Port {
         // The first close consumes the Device and its Nodes for every result.
         if (device_ != nullptr)
             static_cast<void>(
-                mimhid_device_close(device_, link_timeout_ms, close_drain_timeout_ms));
+                mimhid_device_close(device_, mim_.link_timeout_ms, mim_.drain_timeout_ms));
         device_ = nullptr;
         nodes_ = {};
         clone_nodes_.clear();
@@ -555,12 +536,25 @@ class MimPort final : public Port {
         return false;
     }
 
+    // The endpoint number of an address must be one the board's USB controller has (the target's
+    // SET_CONFIGURATION would fail otherwise); else error_ says so.
+    [[nodiscard]] bool endpoint_in_range(const uint8_t address, const uint32_t highest) {
+        if ((address & 0x0FU) <= highest)
+            return true;
+        error_ = "endpoint address 0x" + [&] {
+            char text[8];
+            std::snprintf(text, sizeof text, "%02X", address);
+            return std::string(text);
+        }() + " is above the board's highest endpoint number " + std::to_string(highest);
+        return false;
+    }
+
     // Closes every Node, of the profiles and of a clone, inside a batch the caller opened.
     [[nodiscard]] bool close_nodes() {
         for (mimhid_node*& node : nodes_) {
             if (node == nullptr)
                 continue;
-            const mimhid_result closed = mimhid_node_close(node, &commit_waits, close_drain_timeout_ms);
+            const mimhid_result closed = mimhid_node_close(node, &waits_, mim_.drain_timeout_ms);
             // Every result but these consumed the Node, an error included.
             if (closed != MIMHID_ERR_PARAM && closed != MIMHID_ERR_UNSET_FIELD)
                 node = nullptr;
@@ -570,7 +564,7 @@ class MimPort final : public Port {
         for (mimhid_node*& node : clone_nodes_) {
             if (node == nullptr)
                 continue;
-            const mimhid_result closed = mimhid_node_close(node, &commit_waits, close_drain_timeout_ms);
+            const mimhid_result closed = mimhid_node_close(node, &waits_, mim_.drain_timeout_ms);
             // Every result but these consumed the Node, an error included.
             if (closed != MIMHID_ERR_PARAM && closed != MIMHID_ERR_UNSET_FIELD)
                 node = nullptr;
@@ -590,9 +584,9 @@ class MimPort final : public Port {
             if (out.bytes.size() > feature_limit_)
                 return true;
             return ok(mimhid_node_set_feature_response(node, out.report_id, out.bytes.data(),
-                                                       out.bytes.size(), link_timeout_ms));
+                                                       out.bytes.size(), mim_.link_timeout_ms));
         }
-        return ok(mimhid_report_send(node, out.bytes.data(), out.bytes.size(), link_timeout_ms));
+        return ok(mimhid_report_send(node, out.bytes.data(), out.bytes.size(), mim_.link_timeout_ms));
     }
 
     [[nodiscard]] bool send_battery() {
@@ -652,18 +646,38 @@ class MimPort final : public Port {
         }
         if (!ok(result))
             return false;
-        mimhid_node_config node{};
-        mimhid_node_config_init(&node, static_cast<uint8_t>(interface));
         const NodeUsb& usb = options.node_usb[kind];
-        node.ep_in.poll_interval_ms = static_cast<uint8_t>(usb.poll_interval_ms.value_or(1U));
-        node.ep_in.max_packet_size = static_cast<uint16_t>(usb.ep_in_size.value_or(64U));
-        node.ep_out.max_packet_size = static_cast<uint16_t>(usb.ep_out_size.value_or(0U));
+        // Nothing is filled in for a value the user left out.
+        if (const std::string absent = node_usb_missing(usb); !absent.empty()) {
+            mimhid_spec_release(spec);
+            error_ = "not set: " + absent;
+            return false;
+        }
+        mimhid_node_config node{};
+        mimhid_node_config_init(&node);
+        node.iface.number = static_cast<uint8_t>(interface);
+        node.iface.class_code = 0x03U; // HID, the only class the board opens
+        // An endpoint's number follows its interface's: IN 0x81 + n, OUT 0x01 + n.
+        node.ep_in.address = static_cast<uint8_t>(0x81 + interface);
+        node.ep_in.poll_interval_ms = static_cast<uint8_t>(*usb.poll_interval_ms);
+        node.ep_in.max_packet_size = static_cast<uint16_t>(*usb.ep_in_size);
+        node.ep_out.max_packet_size = static_cast<uint16_t>(*usb.ep_out_size);
         node.ep_out.address = node.ep_out.max_packet_size > 0 ? static_cast<uint8_t>(0x01 + interface) : 0U;
+        // An OUT endpoint polls as often as the interface's IN endpoint.
         node.ep_out.poll_interval_ms = node.ep_out.max_packet_size > 0 ? node.ep_in.poll_interval_ms : 0U;
-        node.iface.bcd_hid = usb.bcd_hid ? static_cast<uint16_t>(*usb.bcd_hid) : hid_bcd;
-        node.iface.country_code = static_cast<uint8_t>(usb.country_code.value_or(0U));
+        node.iface.bcd_hid = static_cast<uint16_t>(*usb.bcd_hid);
+        node.iface.country_code = static_cast<uint8_t>(*usb.country_code);
         node.iface.name = usb.interface_name.empty() ? nullptr : usb.interface_name.c_str();
-        result = mimhid_node_open(device_, spec, &node, &commit_waits, &nodes_[kind]);
+        mimhid_board_limits board{};
+        board.struct_size = static_cast<uint32_t>(sizeof(board));
+        if (!ok(mimhid_device_limits(device_, &board)) ||
+            !endpoint_in_range(node.ep_in.address, board.max_endpoint_number) ||
+            (node.ep_out.address != 0 &&
+             !endpoint_in_range(node.ep_out.address, board.max_endpoint_number))) {
+            mimhid_spec_release(spec);
+            return false;
+        }
+        result = mimhid_node_open(device_, spec, &node, &waits_, &nodes_[kind]);
         // The Node keeps its own reference to the Spec.
         mimhid_spec_release(spec);
         if (!ok(result)) {
@@ -677,6 +691,9 @@ class MimPort final : public Port {
     std::string path_;
     unsigned buttons_;
     std::shared_ptr<Registry> registry_;
+    // What the board was opened with: its waits are the user's.
+    MimDevice mim_;
+    mimhid_commit_timeouts waits_{};
     std::array<mimhid_node*, node_kinds> nodes_{};
     // The size and descriptor values the touch Node was built for.
     Size touch_size_{};
@@ -751,50 +768,72 @@ class MimBackend final : public Backend {
             return nullptr;
         }
         const std::string& path = listed_[index];
-        const std::string missing = missing_values(options.mim, options.clone.has_value());
+        uint8_t wanted = 0;
+        if (options.mouse)
+            wanted = static_cast<uint8_t>(wanted | node_bit(node_mouse));
+        if (options.keyboard)
+            wanted = static_cast<uint8_t>(wanted | node_bit(node_keyboard));
+        if (options.media)
+            wanted = static_cast<uint8_t>(wanted | node_bit(node_media));
+        if (options.touch)
+            wanted = static_cast<uint8_t>(wanted | node_bit(node_touch));
+        MimDevice mim = options.mim;
+        mim.node = options.node_usb;
+        // The port is the one this backend found; the file's own is not read here.
+        if (mim.port.empty())
+            mim.port = path;
+        const std::string missing = board_missing(mim, wanted, options.clone.has_value());
         if (!missing.empty()) {
             error = "not set: " + missing;
             return nullptr;
         }
-        const MimOptions& mim = options.mim;
 
         mimhid_device_config device{};
         mimhid_device_config_init(&device);
         device.transport.baud_rate = mim.baud;
+        device.transport.handshake_timeout_ms = mim.handshake_timeout_ms;
         // The largest report libmimhid builds. A board that holds less (a full-speed
         // chip takes 64) is asked for its limit below and opened again with it.
         device.transport.maximum_report_bytes = MIMHID_HOST_MAX_REPORT_BYTES;
-        // transport.linux_hid keeps the Linux HID parser limits of the initializer.
+        device.transport.linux_hid.descriptor_bytes = mim.linux_hid.descriptor_bytes;
+        device.transport.linux_hid.fields_per_report = mim.linux_hid.fields_per_report;
+        device.transport.linux_hid.global_stack_depth = mim.linux_hid.global_stack_depth;
+        device.transport.linux_hid.report_size_bits = mim.linux_hid.report_size_bits;
+        device.transport.linux_hid.usages = mim.linux_hid.usages;
+        device.transport.linux_hid.report_data_bits = mim.linux_hid.report_data_bits;
         // The Nodes are fixed and range-checked by the profile factories.
         device.transport.validate_reports = 0U;
         // The board detaches from its target when this program closes it.
         device.transport.keep_attached = 0U;
+        device.transport.log_level = MIMHID_LOG_DISABLED;
         device.usb_device.vendor_id = mim.vendor_id;
         device.usb_device.product_id = mim.product_id;
-        device.usb_device.bcd_device = mim.bcd_device != 0 ? mim.bcd_device : usb_bcd_device;
-        device.usb_device.language_id = mim.language_id != 0 ? mim.language_id : usb_language_id;
+        device.usb_device.bcd_device = mim.bcd_device;
+        device.usb_device.bcd_usb = mim.bcd_usb;
+        device.usb_device.ep0_max_packet_size = static_cast<uint8_t>(mim.ep0_max_packet_size);
+        device.usb_device.language_id = mim.language_id;
         device.usb_device.manufacturer = mim.manufacturer.c_str();
         device.usb_device.product = mim.product.c_str();
         device.usb_device.serial = mim.serial.empty() ? nullptr : mim.serial.c_str();
-        device.usb_config.string = mim.configuration.empty() ? nullptr : mim.configuration.c_str();
         device.usb_device.serial_from_chip_id = mim.serial_from_chip_id ? 1U : 0U;
+        // Each interface says its own class (USB 2.0 9.6.1: class 0 at the device level).
         device.usb_device.device_class = 0;
         device.usb_device.device_subclass = 0;
         device.usb_device.device_protocol = 0;
-        device.usb_device.bcd_usb = 0x0200;
-        device.usb_device.ep0_max_packet_size = 64;
+        // The board has one configuration, and the stack numbers it 1.
         device.usb_config.configuration_value = 1;
+        device.usb_config.string = mim.configuration.empty() ? nullptr : mim.configuration.c_str();
+        // USB 2.0 9.6.3: bit 7 is reserved and set; bit 6 self-powered, bit 5 remote wakeup.
         const uint8_t self_pw = mim.self_powered ? 0x40 : 0;
         const uint8_t rem_wk = mim.remote_wakeup ? 0x20 : 0;
         device.usb_config.bm_attributes = static_cast<uint8_t>(0x80 | self_pw | rem_wk);
-        const uint32_t pwr = mim.max_power_ma != 0 ? mim.max_power_ma : usb_max_power_ma;
-        device.usb_config.bmax_power = static_cast<uint8_t>(pwr / 2);
-        device.transport.log_level = MIMHID_LOG_DISABLED;
+        // bMaxPower is in units of 2 mA (USB 2.0 9.6.3).
+        device.usb_config.bmax_power = static_cast<uint8_t>(mim.max_power_ma / 2);
 
         mimhid_device* opened = nullptr;
         mimhid_result result = mimhid_device_open(path.c_str(), &device, &opened);
         if (result == MIMHID_ERR_OVERFLOW) {
-            const uint32_t limit = board_report_limit(path, device);
+            const uint32_t limit = board_report_limit(path, device, mim);
             if (limit != 0U) {
                 device.transport.maximum_report_bytes = limit;
                 result = mimhid_device_open(path.c_str(), &device, &opened);
@@ -804,7 +843,7 @@ class MimBackend final : public Backend {
             error = "the board could not be opened: " + describe(result);
             return nullptr;
         }
-        auto port = std::make_unique<MimPort>(opened, path, options.buttons, registry_);
+        auto port = std::make_unique<MimPort>(opened, path, options.buttons, registry_, mim);
         uint8_t added = 0;
         if (!port->set_nodes(options, added)) {
             error = "the input devices could not be registered: " + port->error();
@@ -817,7 +856,8 @@ class MimBackend final : public Backend {
     // The largest report the board at path takes, learned by opening it with the
     // smallest limit; 0 when that fails too. The limit never exceeds libmimhid's.
     [[nodiscard]] static uint32_t board_report_limit(const std::string& path,
-                                                     mimhid_device_config config) {
+                                                     mimhid_device_config config,
+                                                     const MimDevice& mim) {
         config.transport.maximum_report_bytes = 1U;
         mimhid_device* probe = nullptr;
         if (mimhid_device_open(path.c_str(), &config, &probe) != MIMHID_OK)
@@ -825,7 +865,7 @@ class MimBackend final : public Backend {
         mimhid_board_limits limits{};
         limits.struct_size = static_cast<uint32_t>(sizeof(limits));
         const bool known = mimhid_device_limits(probe, &limits) == MIMHID_OK;
-        static_cast<void>(mimhid_device_close(probe, link_timeout_ms, close_drain_timeout_ms));
+        static_cast<void>(mimhid_device_close(probe, mim.link_timeout_ms, mim.drain_timeout_ms));
         if (!known)
             return 0U;
         return limits.max_report_bytes < MIMHID_HOST_MAX_REPORT_BYTES

@@ -441,16 +441,79 @@ const char* link_name(const LinkKind link) noexcept {
     return link == LinkKind::aoa ? "aoa" : link == LinkKind::mim ? "mim" : "";
 }
 
+// An unsigned number in 1..high; empty text is a value not given (0).
+bool to_unsigned(const std::string_view value, const uint64_t high, uint64_t& out) noexcept {
+    if (value.empty()) {
+        out = 0;
+        return true;
+    }
+    uint64_t parsed = 0;
+    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (error != std::errc() || end != value.data() + value.size() || parsed < 1 || parsed > high)
+        return false;
+    out = parsed;
+    return true;
+}
+
+// The longest wait a key may name: ten minutes, in milliseconds.
+constexpr uint64_t max_wait_ms = 600000;
+
 bool set_mim_device(DeviceConfig& d, const std::string_view key, const std::string_view value) {
     if (key == "port")
         return to_port_path(value, d.mim.port);
-    if (key == "baud") {
-        int number = 0;
-        if (!value.empty() && !to_int(value, 1, 2147483647, number))
+    uint64_t number = 0;
+    const struct {
+        const char* name;
+        uint32_t* wait;
+    } waits[] = {{"handshake_timeout_ms", &d.mim.handshake_timeout_ms},
+                 {"link_timeout_ms", &d.mim.link_timeout_ms},
+                 {"reconnect_timeout_ms", &d.mim.reconnect_timeout_ms},
+                 {"drain_timeout_ms", &d.mim.drain_timeout_ms},
+                 {"ready_timeout_ms", &d.mim.ready_timeout_ms}};
+    for (const auto& wait : waits) {
+        if (key != wait.name)
+            continue;
+        if (!to_unsigned(value, max_wait_ms, number))
             return false;
-        d.mim.baud = static_cast<uint32_t>(value.empty() ? 0 : number);
+        *wait.wait = static_cast<uint32_t>(number);
         return true;
     }
+    LinuxHidLimits& linux_hid = d.mim.linux_hid;
+    const uint64_t max32 = 4294967295ULL;
+    if (key == "baud") {
+        if (!to_unsigned(value, 2147483647ULL, number))
+            return false;
+        d.mim.baud = static_cast<uint32_t>(number);
+        return true;
+    }
+    if (key == "linux_descriptor_bytes") {
+        if (!to_unsigned(value, max32, number))
+            return false;
+        linux_hid.descriptor_bytes = static_cast<uint32_t>(number);
+        return true;
+    }
+    if (key == "linux_fields_per_report") {
+        if (!to_unsigned(value, max32, number))
+            return false;
+        linux_hid.fields_per_report = static_cast<uint32_t>(number);
+        return true;
+    }
+    if (key == "linux_global_stack_depth") {
+        if (!to_unsigned(value, max32, number))
+            return false;
+        linux_hid.global_stack_depth = static_cast<uint32_t>(number);
+        return true;
+    }
+    if (key == "linux_report_size_bits") {
+        if (!to_unsigned(value, max32, number))
+            return false;
+        linux_hid.report_size_bits = static_cast<uint32_t>(number);
+        return true;
+    }
+    if (key == "linux_usages")
+        return to_unsigned(value, UINT64_MAX, linux_hid.usages);
+    if (key == "linux_report_data_bits")
+        return to_unsigned(value, UINT64_MAX, linux_hid.report_data_bits);
     return false;
 }
 
@@ -473,6 +536,15 @@ bool set_usb(DeviceConfig& d, const std::string_view key, const std::string_view
         return to_usb_power(value, d.mim.max_power_ma);
     if (key == "language_id")
         return to_usb_id(value, d.mim.language_id);
+    if (key == "bcd_usb")
+        return to_usb_id(value, d.mim.bcd_usb);
+    if (key == "ep0_max_packet_size") {
+        uint64_t size = 0;
+        if (!to_unsigned(value, 64, size) || (size != 0 && size != 8 && size != 16 && size != 32 && size != 64))
+            return false;
+        d.mim.ep0_max_packet_size = static_cast<uint16_t>(size);
+        return true;
+    }
     if (key == "self_powered")
         return to_bool(value, d.mim.self_powered);
     if (key == "remote_wakeup")
@@ -1178,23 +1250,66 @@ std::string shared_interface_error(const std::array<NodeUsb, usb_nodes>& nodes,
     return {};
 }
 
-MimDevice mim_of(const DeviceConfig& device) {
-    MimDevice mim = device.mim;
-    if (mim.vendor_id == 0 && mim.product_id == 0) {
-        mim.vendor_id = default_usb_vendor_id;
-        mim.product_id = default_usb_product_id;
-    }
-    if (mim.manufacturer.empty())
-        mim.manufacturer = default_usb_manufacturer;
-    if (mim.product.empty())
-        mim.product = default_usb_product;
-    if (mim.language_id == 0)
-        mim.language_id = default_usb_language_id;
-    return mim;
+std::string node_usb_missing(const NodeUsb& usb) {
+    std::string list;
+    const auto need = [&](const bool given, const char* name) {
+        if (given)
+            return;
+        if (!list.empty())
+            list += ", ";
+        list += name;
+    };
+    need(usb.poll_interval_ms.has_value(), "poll_interval_ms");
+    need(usb.ep_in_size.has_value(), "ep_in_size");
+    need(usb.ep_out_size.has_value(), "ep_out_size");
+    need(usb.bcd_hid.has_value(), "bcd_hid");
+    need(usb.country_code.has_value(), "country_code");
+    return list;
 }
 
-bool uses_test_id(const MimDevice& mim) noexcept {
-    return mim.vendor_id == default_usb_vendor_id && mim.product_id == default_usb_product_id;
+std::string board_missing(const MimDevice& mim, const uint8_t wanted, const bool cloned) {
+    std::string list;
+    const auto need = [&](const bool given, const std::string& name) {
+        if (given)
+            return;
+        if (!list.empty())
+            list += ", ";
+        list += name;
+    };
+    need(!mim.port.empty(), "mim.port");
+    need(mim.baud != 0, "mim.baud");
+    need(mim.handshake_timeout_ms != 0, "mim.handshake_timeout_ms");
+    need(mim.link_timeout_ms != 0, "mim.link_timeout_ms");
+    need(mim.reconnect_timeout_ms != 0, "mim.reconnect_timeout_ms");
+    need(mim.drain_timeout_ms != 0, "mim.drain_timeout_ms");
+    need(mim.ready_timeout_ms != 0, "mim.ready_timeout_ms");
+    const LinuxHidLimits& linux_hid = mim.linux_hid;
+    need(linux_hid.descriptor_bytes != 0, "mim.linux_descriptor_bytes");
+    need(linux_hid.fields_per_report != 0, "mim.linux_fields_per_report");
+    need(linux_hid.global_stack_depth != 0, "mim.linux_global_stack_depth");
+    need(linux_hid.report_size_bits != 0, "mim.linux_report_size_bits");
+    need(linux_hid.usages != 0, "mim.linux_usages");
+    need(linux_hid.report_data_bits != 0, "mim.linux_report_data_bits");
+    need(mim.bcd_usb != 0, "usb.bcd_usb");
+    need(mim.ep0_max_packet_size != 0, "usb.ep0_max_packet_size");
+    need(mim.language_id != 0, "usb.language_id");
+    // A clone brings its own ids, strings, power values and interface values.
+    if (!cloned) {
+        need(mim.vendor_id != 0, "usb.vendor_id");
+        need(mim.product_id != 0, "usb.product_id");
+        need(!mim.manufacturer.empty(), "usb.manufacturer");
+        need(!mim.product.empty(), "usb.product");
+        need(mim.bcd_device != 0, "usb.bcd_device");
+        need(mim.max_power_ma != 0, "usb.max_power_ma");
+        for (size_t n = 0; n < usb_nodes; ++n) {
+            if ((wanted & (1U << n)) == 0)
+                continue;
+            const std::string absent = node_usb_missing(mim.node[n]);
+            if (!absent.empty())
+                need(false, std::string(node_section_names[n]) + " (" + absent + ")");
+        }
+    }
+    return list;
 }
 
 uint16_t adb_port_of(const Config& config, const size_t index) noexcept {
@@ -1633,8 +1748,24 @@ std::string format_device(const DeviceConfig& d) {
     if (d.link == LinkKind::mim) {
         out.section("mim");
         out.put("port", d.mim.port);
-        out.put("baud", d.mim.baud == 0 ? "" : std::to_string(d.mim.baud));
+        const auto put_unsigned = [&](const char* key, const uint64_t v) {
+            out.put(key, v == 0 ? "" : std::to_string(v));
+        };
+        put_unsigned("baud", d.mim.baud);
+        put_unsigned("handshake_timeout_ms", d.mim.handshake_timeout_ms);
+        put_unsigned("link_timeout_ms", d.mim.link_timeout_ms);
+        put_unsigned("reconnect_timeout_ms", d.mim.reconnect_timeout_ms);
+        put_unsigned("drain_timeout_ms", d.mim.drain_timeout_ms);
+        put_unsigned("ready_timeout_ms", d.mim.ready_timeout_ms);
+        put_unsigned("linux_descriptor_bytes", d.mim.linux_hid.descriptor_bytes);
+        put_unsigned("linux_fields_per_report", d.mim.linux_hid.fields_per_report);
+        put_unsigned("linux_global_stack_depth", d.mim.linux_hid.global_stack_depth);
+        put_unsigned("linux_report_size_bits", d.mim.linux_hid.report_size_bits);
+        put_unsigned("linux_usages", d.mim.linux_hid.usages);
+        put_unsigned("linux_report_data_bits", d.mim.linux_hid.report_data_bits);
         out.section("usb");
+        out.put("bcd_usb", usb_id_text(d.mim.bcd_usb));
+        put_unsigned("ep0_max_packet_size", d.mim.ep0_max_packet_size);
         out.put("vendor_id", usb_id_text(d.mim.vendor_id));
         out.put("product_id", usb_id_text(d.mim.product_id));
         out.put("manufacturer", d.mim.manufacturer);

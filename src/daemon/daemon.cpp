@@ -212,22 +212,9 @@ LinkOptions link_options_for(const Config& config, const DeviceConfig& device) {
     options.touch_hid = device.touch_hid;
     // Only a board has these; a phone's must not change when they do.
     if (device.link == LinkKind::mim) {
-        // The values left out take their ordinary ones here (docs/CONFIG.md, "[usb]").
-        const MimDevice mim = mim_of(device);
-        options.mim.baud = mim.baud;
-        options.mim.vendor_id = mim.vendor_id;
-        options.mim.product_id = mim.product_id;
-        options.mim.manufacturer = mim.manufacturer;
-        options.mim.product = mim.product;
-        options.mim.serial = mim.serial;
-        options.mim.serial_from_chip_id = mim.serial_from_chip_id;
-        options.mim.bcd_device = mim.bcd_device;
-        options.mim.max_power_ma = mim.max_power_ma;
-        options.mim.language_id = mim.language_id;
-        options.mim.self_powered = mim.self_powered;
-        options.mim.remote_wakeup = mim.remote_wakeup;
-        options.mim.configuration = mim.configuration;
-        options.node_usb = mim.node;
+        // Every value is the file's own; one it does not give stays unset and the board is not opened.
+        options.mim = device.mim;
+        options.node_usb = device.mim.node;
         // A clone brings its own ids, strings and power values, and has no touchscreen.
         if (device.clone) {
             const CloneDevice& copy = device.clone->device;
@@ -1435,8 +1422,6 @@ void Daemon::publish_status() {
                   << "\n";
             lines << prefix << "touch=" << touch_state(config_, phone->config) << "\n";
             if (phone->config.link == LinkKind::mim) {
-                lines << prefix << "usb_test_id="
-                      << (uses_test_id(mim_of(phone->config)) ? "yes" : "no") << "\n";
                 if (phone->config.clone) {
                     lines << prefix << "clone=" << one_line(phone->config.clone->source) << "\n";
                     const auto& notes = phone->config.clone->device.notes;

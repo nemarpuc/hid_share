@@ -142,55 +142,86 @@ TEST_CASE("finish is refused unless the latest press is the fine step") {
     CHECK(axis.finish(1) == 100);
 }
 
-TEST_CASE("a board that gives no ids announces the test id") {
-    DeviceConfig board;
-    board.link = LinkKind::mim;
-    const MimDevice plain = mim_of(board);
-    CHECK(plain.vendor_id == 0x1209);
-    CHECK(plain.product_id == 0x0001);
-    CHECK(plain.manufacturer == "Generic");
-    CHECK(plain.product == "USB Input Device");
-    CHECK(uses_test_id(plain));
+namespace {
+// A board file that gives every value a board needs.
+MimDevice full_board() {
+    MimDevice mim;
+    mim.port = "/dev/ttyACM0";
+    mim.baud = 921600;
+    mim.handshake_timeout_ms = 200;
+    mim.link_timeout_ms = 500;
+    mim.reconnect_timeout_ms = 3000;
+    mim.drain_timeout_ms = 1000;
+    mim.ready_timeout_ms = 5000;
+    mim.linux_hid = {4096, 256, 4, 32, 1024, 65536};
+    mim.vendor_id = 0x1234;
+    mim.product_id = 0x5678;
+    mim.bcd_usb = 0x0200;
+    mim.ep0_max_packet_size = 64;
+    mim.manufacturer = "m";
+    mim.product = "p";
+    mim.bcd_device = 0x0100;
+    mim.max_power_ma = 100;
+    mim.language_id = 0x0409;
+    for (NodeUsb& n : mim.node) {
+        n.poll_interval_ms = 1;
+        n.ep_in_size = 64;
+        n.ep_out_size = 0;
+        n.bcd_hid = 0x0111;
+        n.country_code = 0;
+    }
+    return mim;
+}
+} // namespace
 
-    // A string given alone leaves the ids at the test id.
-    board.mim.manufacturer = "maker";
-    CHECK(mim_of(board).manufacturer == "maker");
-    CHECK(mim_of(board).vendor_id == 0x1209);
+TEST_CASE("a board with nothing given names every missing key and fills nothing in") {
+    const MimDevice none;
+    const std::string list = board_missing(none, 0b0111, false);
+    for (const char* key : {"mim.port", "mim.baud", "mim.handshake_timeout_ms", "mim.link_timeout_ms",
+                            "mim.reconnect_timeout_ms", "mim.drain_timeout_ms", "mim.ready_timeout_ms",
+                            "mim.linux_descriptor_bytes", "mim.linux_usages", "usb.bcd_usb",
+                            "usb.ep0_max_packet_size", "usb.language_id", "usb.vendor_id",
+                            "usb.product_id", "usb.manufacturer", "usb.product", "usb.bcd_device",
+                            "usb.max_power_ma", "usb.mouse (", "usb.keyboard (", "usb.media (",
+                            "poll_interval_ms", "ep_in_size", "bcd_hid", "country_code"})
+        CHECK_MESSAGE(list.find(key) != std::string::npos, key);
+    CHECK(list.find("usb.touch") == std::string::npos);
 
-    // The two ids are one unit: one given alone is not completed.
-    DeviceConfig half;
-    half.mim.vendor_id = 0x046d;
-    CHECK(mim_of(half).vendor_id == 0x046d);
-    CHECK(mim_of(half).product_id == 0);
-    CHECK_FALSE(uses_test_id(mim_of(half)));
-
-    DeviceConfig given;
-    given.mim.vendor_id = 0x1234;
-    given.mim.product_id = 0x5678;
-    given.mim.manufacturer = "m";
-    given.mim.product = "p";
-    const MimDevice own = mim_of(given);
-    CHECK(own.vendor_id == 0x1234);
-    CHECK(own.product_id == 0x5678);
-    CHECK(own.manufacturer == "m");
-    CHECK(own.product == "p");
-    CHECK_FALSE(uses_test_id(own));
+    CHECK(board_missing(full_board(), 0b1111, false).empty());
+    // Each key, left out alone, is the only one named.
+    MimDevice mim = full_board();
+    mim.link_timeout_ms = 0;
+    CHECK(board_missing(mim, 0b0111, false) == "mim.link_timeout_ms");
+    mim = full_board();
+    mim.language_id = 0;
+    CHECK(board_missing(mim, 0b0111, true) == "usb.language_id");
+    // A clone brings its own ids, power values and interface values.
+    mim = full_board();
+    mim.vendor_id = mim.product_id = mim.bcd_device = mim.max_power_ma = 0;
+    mim.manufacturer.clear();
+    mim.node = {};
+    CHECK(board_missing(mim, 0b0111, true).empty());
+    CHECK_FALSE(board_missing(mim, 0b0111, false).empty());
 }
 
-TEST_CASE("language_id is read, written and never zero") {
+TEST_CASE("the board's keys are read and written back whole") {
     DeviceConfig board;
     board.serial = "mim-x";
     board.link = LinkKind::mim;
+    board.mim = full_board();
     board.mim.language_id = 0x0407;
     DeviceConfig back;
     REQUIRE(parse_device(format_device(board), back).empty());
     CHECK(back.mim.language_id == 0x0407);
+    CHECK(back.mim == board.mim);
     DeviceConfig fresh;
     CHECK_FALSE(parse_device("[usb]\nlanguage_id = 0\n", fresh).empty());
-    REQUIRE(parse_device("[usb]\nlanguage_id =\n", fresh).empty());
+    CHECK_FALSE(parse_device("[usb]\nep0_max_packet_size = 24\n", fresh).empty());
+    CHECK_FALSE(parse_device("[mim]\nlink_timeout_ms = 0\n", fresh).empty());
+    CHECK_FALSE(parse_device("[mim]\nlinux_usages = -1\n", fresh).empty());
+    REQUIRE(parse_device("[usb]\nlanguage_id =\n[mim]\nlinux_usages = 1024\n", fresh).empty());
     CHECK(fresh.mim.language_id == 0);
-    CHECK(mim_of(fresh).language_id == 0x0409);
-    CHECK(mim_of(back).language_id == 0x0407);
+    CHECK(fresh.mim.linux_hid.usages == 1024);
 }
 
 TEST_CASE("interface numbers keep pinned ones and fill the rest from the lowest") {

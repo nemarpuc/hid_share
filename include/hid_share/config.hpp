@@ -162,6 +162,21 @@ struct TouchHid {
 [[nodiscard]] std::string shared_interface_error(const std::array<NodeUsb, usb_nodes>& nodes,
                                                  uint8_t wanted);
 
+// The limits of the Linux HID parser of the target (libmimhid's transport.linux_hid). They are the
+// target kernel's, so they are the user's; 0 when not set.
+struct LinuxHidLimits {
+    uint32_t descriptor_bytes{};
+    uint32_t fields_per_report{};
+    uint32_t global_stack_depth{};
+    uint32_t report_size_bits{};
+    uint64_t usages{};
+    uint64_t report_data_bits{};
+
+    [[nodiscard]] bool operator==(const LinuxHidLimits&) const = default;
+};
+
+// Everything a board (MIM) is opened with. A value the file does not give is stored as its "unset"
+// value (0, empty); nothing here has a default, and board_missing() names what is not given.
 struct MimDevice {
     // The serial port, as the operating system names it. The device's serial
     // is made from it (mim_serial_of).
@@ -169,19 +184,29 @@ struct MimDevice {
     // The serial speed; it must be the one this board's firmware is built for.
     // 0 when not set.
     uint32_t baud{};
+    // The waits of the link, in milliseconds; 0 when not set.
+    uint32_t handshake_timeout_ms{}; // the answer to the first message of a link
+    uint32_t link_timeout_ms{};      // a command's answer, and a report that has to leave
+    uint32_t reconnect_timeout_ms{}; // the board's new enumeration after a change of Nodes
+    uint32_t drain_timeout_ms{};     // a close: the neutral reports
+    uint32_t ready_timeout_ms{};     // the target's mount after the board re-attaches
+    LinuxHidLimits linux_hid;
     // USB ids as typed; 0 when not set.
     uint16_t vendor_id{};
     uint16_t product_id{};
-    // At most 31 printable ASCII characters each; empty when not set.
+    // The USB version and the control endpoint's packet size (8, 16, 32 or 64); 0 when not set.
+    uint16_t bcd_usb{};
+    uint16_t ep0_max_packet_size{};
+    // UTF-8, at most 126 characters; empty when not set.
     std::string manufacturer;
     std::string product;
     // Empty leaves the serial number out, unless serial_from_chip_id is set.
     std::string serial;
     bool serial_from_chip_id{};
-    // 0 when not set: the board announces 0x0100 and 100 mA.
+    // 0 when not set.
     uint16_t bcd_device{};
     uint16_t max_power_ma{};
-    // The LANGID of its strings; 0 when not set: 0x0409.
+    // The LANGID of its strings; 0 when not set.
     uint16_t language_id{};
     bool self_powered{};
     bool remote_wakeup{};
@@ -189,6 +214,8 @@ struct MimDevice {
     std::string configuration;
     // Each Node's interface.
     std::array<NodeUsb, usb_nodes> node;
+
+    [[nodiscard]] bool operator==(const MimDevice&) const = default;
 };
 
 // A device's own shortcuts ([keys] in its file); empty for none.
@@ -374,20 +401,13 @@ enum class GainSource { none, typed, measured, android };
 [[nodiscard]] bool media_of(const Config& config, const DeviceConfig& device) noexcept;
 [[nodiscard]] Touch touch_of(const Config& config, const DeviceConfig& device) noexcept;
 
-// What a board announces when nothing was typed (docs/CONFIG.md, "[usb]"). The
-// ids are the pid.codes test id, which is for in-house testing only; no other
-// maker's id or name is used here.
-inline constexpr uint16_t default_usb_vendor_id = 0x1209;
-inline constexpr uint16_t default_usb_product_id = 0x0001;
-inline constexpr std::string_view default_usb_manufacturer = "Generic";
-inline constexpr std::string_view default_usb_product = "USB Input Device";
-inline constexpr uint16_t default_usb_language_id = 0x0409;
-// The board's values with each one that was left out filled in. The two ids are
-// one unit: both left out give the test id, one given alone is kept as it is
-// and the other stays 0, so the board is not opened and says which is missing.
-[[nodiscard]] MimDevice mim_of(const DeviceConfig& device);
-// Whether the ids are the test id.
-[[nodiscard]] bool uses_test_id(const MimDevice& mim) noexcept;
+// What a board cannot be opened without, as a list of key names ("" when all are given). Nothing
+// is filled in for a value that was not given. `wanted` has bit n set for each Node n (NodeKind
+// order) the board is to present; `cloned`: a clone brings its own ids, strings, power values and
+// interface values, so those are not asked for.
+[[nodiscard]] std::string board_missing(const MimDevice& mim, uint8_t wanted, bool cloned);
+// The same for one Node's interface values; "" when all are given.
+[[nodiscard]] std::string node_usb_missing(const NodeUsb& usb);
 
 [[nodiscard]] uint16_t adb_port_of(const Config& config, size_t index) noexcept;
 // Its name, or its serial when it has none.

@@ -21,7 +21,7 @@ env:
   AOAHID_TAG: v0.1.0
   MIMHID_REPOSITORY: nemarpuc/libmimhid
   # Changing the tag means changing the hashes in the matrix below too.
-  MIMHID_TAG: v0.1.0
+  MIMHID_TAG: v0.2.0
 
 jobs:
   build:
@@ -36,38 +36,38 @@ jobs:
             aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
             aoahid_sha256: b51c5f2f9e8bdcc1acd854ffe745e2f70f77862a2aea9ca503da060a015dcde7
             mimhid_asset: libmimhid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
-            mimhid_sha256: 876616859ac076d7f7af54b1d710e51d36532139953a27d7fecf0b02731d7c9c
+            mimhid_sha256: 39786fa2abcbe18fbe52db52c8e715f2eec4e98ccab589f221514b076c2b514c
           - os: windows-2022
             platform: windows
             aoahid_asset: libaoahid-*-windows-x86_64-shared.zip
             aoahid_sha256: 7ee281347d14e30a92540ab0ae88adb609b6af2da4af112c2975201ff284419b
             mimhid_asset: libmimhid-*-windows-x86_64-shared.zip
-            mimhid_sha256: 998c281faca5f54c43a1743c7d40e7ec3b6120152e901092a89406643155110e
+            mimhid_sha256: b4fc768a409f907e94f020480801998e757327c45daa03a9c6b4adecee7a6f57
           - os: macos-15
             platform: macos
             aoahid_asset: libaoahid-*-macos-arm64-shared.tar.gz
             aoahid_sha256: 9c4ce83ba3b313c00d2888a5ea6bfb1b7abf9f19c0c2120859bdda6327d6c65a
             mimhid_asset: libmimhid-*-macos-arm64-shared.tar.gz
-            mimhid_sha256: 7b845a0e982f8bcc464cd7ac00fa6a5a29555e36fa575c93ee85167c3e3bf890
+            mimhid_sha256: a01dc1143123e8c5ccd46f0e65b8ea716ed2d76668aacd6b61e61fcbf866277e
           - os: macos-15-intel
             platform: macos
             aoahid_asset: libaoahid-*-macos-x86_64-shared.tar.gz
             aoahid_sha256: 4dd285d28fa4fca4a0838ce8e6f53d9ea63a36ca1b8968e3c2202f4a69002d28
             mimhid_asset: libmimhid-*-macos-x86_64-shared.tar.gz
-            mimhid_sha256: 7b10476b2fbf85c0cfdf3bd0fd4023c116e98f49fc19a748d9b7ac432d8a0cab
+            mimhid_sha256: 0d008b410328483f665b21646dce6d786b2087df7ba9999b19d4f0b9d4c096b2
           - os: ubuntu-22.04-arm
             platform: linux
             aoahid_asset: libaoahid-*-linux-aarch64-ubuntu22.04-shared.tar.gz
             aoahid_sha256: 57a098bc1357159fd26d32940d2011355321f35f44c3a5e26636ae3a6a281a92
             mimhid_asset: libmimhid-*-linux-aarch64-ubuntu22.04-shared.tar.gz
-            mimhid_sha256: c769f7461f373cedc0a3da0c3bc0aeb629fd958ec120bf7e2304a10e21abbe8d
+            mimhid_sha256: 4a71fd67805baa38f8f1e84080652035333e969609dc235c334ec8413a8eb21b
           - os: windows-11-arm
             platform: windows
             cmake_arch: ARM64
             aoahid_asset: libaoahid-*-windows-arm64-shared.zip
             aoahid_sha256: 5435e0850d04683faa5a4d926b02f6e8a3620916981f54cb573bd27cba7a03c7
             mimhid_asset: libmimhid-*-windows-arm64-shared.zip
-            mimhid_sha256: c7150a4414f37bd14430357ae210f9887cadb529f9bbe66c28f3c5dd42279959
+            mimhid_sha256: 43edc4cd880a1809acbe5f91570c77ce7da4eb080219028279ebbdb9c7b9a88b
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

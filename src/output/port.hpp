@@ -33,31 +33,6 @@ struct TargetInfo {
     uint32_t baud{};
 };
 
-// What a board (MIM) announces to its target and how its serial link is run.
-// Every value is the user's; none has a fallback, so open() names the ones
-// that are missing.
-struct MimOptions {
-    uint32_t baud{};
-    uint16_t vendor_id{};
-    uint16_t product_id{};
-    // At most 31 printable ASCII characters each.
-    std::string manufacturer;
-    std::string product;
-    // Empty leaves the serial number out unless serial_from_chip_id is set.
-    std::string serial;
-    bool serial_from_chip_id{};
-    // 0: the constants of the MIM backend.
-    uint16_t bcd_device{};
-    uint16_t max_power_ma{};
-    // 0: the constant of the MIM backend.
-    uint16_t language_id{};
-    bool self_powered{};
-    bool remote_wakeup{};
-    std::string configuration;
-
-    [[nodiscard]] bool operator==(const MimOptions&) const = default;
-};
-
 // `buttons` is fixed when the target is opened; the three Nodes can be added
 // and removed on an open target (Hub::set_nodes).
 struct LinkOptions {
@@ -72,8 +47,9 @@ struct LinkOptions {
     TouchHid touch_hid;
     // Each Node's USB interface values, in NodeKind order; a board only.
     std::array<NodeUsb, usb_nodes> node_usb;
-    // Used by a board only.
-    MimOptions mim;
+    // Used by a board only: what it announces to its target and how its serial link is run.
+    // Every value is the user's; none has a fallback (board_missing names the ones not given).
+    MimDevice mim;
     // A board only: the plugged-in device it presents instead of the Nodes above (those
     // switches then say which of its parts are presented; touch is not available).
     std::optional<CloneSnapshot> clone;
