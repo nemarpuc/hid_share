@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.0 - Unreleased
+## 0.8.0 - 2026-11-10
 
 - Builds against libaoahid 0.2.0 and libmimhid 0.2.1. The CI and release pins name the new archives with their SHA-256. libaoahid 0.2.0 ships its own libusb, so the Linux and macOS packages now carry it beside the programs.
 - **Breaking:** needs libmimhid 0.2.0, whose `*_init` functions no longer fill in values. A board's device file now has to give every value the board is opened with; nothing is assumed, and a board that lacks one is not opened (the status and the settings window name the missing keys). New required keys: `[mim]` `handshake_timeout_ms`, `link_timeout_ms`, `reconnect_timeout_ms`, `drain_timeout_ms`, `ready_timeout_ms` and the target's Linux HID parser limits `linux_descriptor_bytes`, `linux_fields_per_report`, `linux_global_stack_depth`, `linux_report_size_bits`, `linux_usages`, `linux_report_data_bits`; `[usb]` `bcd_usb`, `ep0_max_packet_size`, `language_id`, `vendor_id`, `product_id`, `manufacturer`, `product`, `bcd_device`, `max_power_ma`; and for each Node `poll_interval_ms`, `ep_in_size`, `ep_out_size`, `bcd_hid`, `country_code`. A clone brings its own ids, strings, power values and interface values, so those are not asked of it.
