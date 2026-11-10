@@ -32,45 +32,45 @@ jobs:
             platform: linux
             name: linux-x86_64
             aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04.tar.gz
-            aoahid_sha256: b51c5f2f9e8bdcc1acd854ffe745e2f70f77862a2aea9ca503da060a015dcde7
+            aoahid_sha256: def7b55f6c54a372a2eca23166ec91d89458048300cd466358ab5d5341357289
             mimhid_asset: libmimhid-*-linux-x86_64-ubuntu22.04.tar.gz
-            mimhid_sha256: 39786fa2abcbe18fbe52db52c8e715f2eec4e98ccab589f221514b076c2b514c
+            mimhid_sha256: 3ae0a21a8a6c2765400b7126ded4f0d6a840970dee76a30c9d762dee619c36a9
           - os: windows-2022
             platform: windows
             name: windows-x86_64
             aoahid_asset: libaoahid-*-windows-x86_64.zip
-            aoahid_sha256: 7ee281347d14e30a92540ab0ae88adb609b6af2da4af112c2975201ff284419b
+            aoahid_sha256: 48fe342efa2083e3ee4560ef9471bbc8330241df3395dce58b883f69174bc610
             mimhid_asset: libmimhid-*-windows-x86_64.zip
-            mimhid_sha256: b4fc768a409f907e94f020480801998e757327c45daa03a9c6b4adecee7a6f57
+            mimhid_sha256: 67322475ba42f2d41fab2e1c9eb3178f60f254e402147a53abf5721e090b6101
           - os: macos-15
             platform: macos
             name: macos-arm64
             aoahid_asset: libaoahid-*-macos-arm64.tar.gz
-            aoahid_sha256: 9c4ce83ba3b313c00d2888a5ea6bfb1b7abf9f19c0c2120859bdda6327d6c65a
+            aoahid_sha256: 643b0be661a3d4f60eaf7cfd23bfe169df381bd0bc269f081b47d1146caccb02
             mimhid_asset: libmimhid-*-macos-arm64.tar.gz
-            mimhid_sha256: a01dc1143123e8c5ccd46f0e65b8ea716ed2d76668aacd6b61e61fcbf866277e
+            mimhid_sha256: 5568b8ee50b1d6bddd28973c904fe54c52223e13bd63a6837cbf5c881c6863b8
           - os: macos-15-intel
             platform: macos
             name: macos-x86_64
             aoahid_asset: libaoahid-*-macos-x86_64.tar.gz
-            aoahid_sha256: 4dd285d28fa4fca4a0838ce8e6f53d9ea63a36ca1b8968e3c2202f4a69002d28
+            aoahid_sha256: 37a9d61f167533b9f07a1d487abce547171c2f95421cc41de4702f846910b387
             mimhid_asset: libmimhid-*-macos-x86_64.tar.gz
-            mimhid_sha256: 0d008b410328483f665b21646dce6d786b2087df7ba9999b19d4f0b9d4c096b2
+            mimhid_sha256: 8882a03a82e36a254f969158529081ec682c827a084113300f481eb4369271d5
           - os: ubuntu-22.04-arm
             platform: linux
             name: linux-aarch64
             aoahid_asset: libaoahid-*-linux-aarch64-ubuntu22.04.tar.gz
-            aoahid_sha256: 57a098bc1357159fd26d32940d2011355321f35f44c3a5e26636ae3a6a281a92
+            aoahid_sha256: 1d3afe1a4c436c65802aa506d8388cd3fe65a6bdef5b6f07610607550cb4612d
             mimhid_asset: libmimhid-*-linux-aarch64-ubuntu22.04.tar.gz
-            mimhid_sha256: 4a71fd67805baa38f8f1e84080652035333e969609dc235c334ec8413a8eb21b
+            mimhid_sha256: 9bce50a11fee50ea377b7f3bcd0e758e1c27eb89a6bb174de1321814322b6fb9
           - os: windows-11-arm
             platform: windows
             cmake_arch: ARM64
             name: windows-arm64
             aoahid_asset: libaoahid-*-windows-arm64.zip
-            aoahid_sha256: 5435e0850d04683faa5a4d926b02f6e8a3620916981f54cb573bd27cba7a03c7
+            aoahid_sha256: f03a1682e5a03c3b6d6de4b9b5452e762fe120062a65760b2983388f4117abce
             mimhid_asset: libmimhid-*-windows-arm64.zip
-            mimhid_sha256: 43edc4cd880a1809acbe5f91570c77ce7da4eb080219028279ebbdb9c7b9a88b
+            mimhid_sha256: 1607a7ad22951978393fb3a4952ae1cdb8a47845e065b54753d35fd3c8354e9f
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
