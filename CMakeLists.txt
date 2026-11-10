@@ -43,9 +43,9 @@ endfunction()
 
 # 2.0.0 is the first libaoahid that takes every wait as an argument of the call
 # (the vendored aoahid_adb_proxy needs it too).
-find_package(aoahid 0.1.0 CONFIG REQUIRED)
+find_package(aoahid 0.2.0 CONFIG REQUIRED)
 # The board (MIM) side; 0.2.0 is the first libmimhid with no defaults in its init functions.
-find_package(mimhid 0.2.0 CONFIG REQUIRED)
+find_package(mimhid 0.2.1 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 add_subdirectory(src)
