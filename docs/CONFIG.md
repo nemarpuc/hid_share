@@ -334,7 +334,7 @@ values and interface values are used instead of `vendor_id`, `product_id`,
 and those are not required; the link keys, `bcd_usb`, `ep0_max_packet_size` and
 `language_id` still are.
 
-Adding a board from the search writes the values every board shares where the file has none: the five waits (500, 1000, 3000, 1000 and 5000 ms), the Linux HID limits (4096, 256, 4, 256, 12288, 65528), `bcd_usb` 0x0200, `ep0_max_packet_size` 64, `language_id` 0x0409, and for each Node `poll_interval_ms` 1, `ep_in_size` 64, `ep_out_size` 0, `bcd_hid` 0x0111, `country_code` 0. A value already there is kept, and a file that is loaded is never filled in.
+Adding a board from the search writes the values every board shares where the file has none: the five waits (500, 1000, 3000, 1000 and 5000 ms), the Linux HID limits (4096, 256, 4, 256, 12288, 65528), `bcd_usb` 0x0200, `ep0_max_packet_size` 64, `language_id` 0x0409, `bcd_device` 0x0100, `max_power_ma` 100, and for each Node `poll_interval_ms` 1, `ep_in_size` 64, `ep_out_size` 0, `bcd_hid` 0x0111, `country_code` 0. A value already there is kept, and a file that is loaded is never filled in.
 
 | Key | |
 | --- | --- |

@@ -1330,6 +1330,8 @@ void write_board_standard(MimDevice& mim) noexcept {
     set(mim.bcd_usb, uint16_t{0x0200});       // USB 2.0
     set(mim.ep0_max_packet_size, uint16_t{64});
     set(mim.language_id, uint16_t{0x0409});   // English (United States), USB LANGID
+    set(mim.bcd_device, uint16_t{0x0100});    // release 1.00 of the device
+    set(mim.max_power_ma, uint16_t{100});     // one unit load, USB 2.0 section 7.2.1.4
     for (NodeUsb& node : mim.node) {
         if (!node.poll_interval_ms)
             node.poll_interval_ms = 1;

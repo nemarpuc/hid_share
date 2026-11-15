@@ -221,7 +221,7 @@ void draw_usb_values(App& app, DeviceConfig& device) {
     if (device.clone)
         look::dim("A clone is presented: its ids, strings and power values are used instead of "
                   "the ones below, which come back when the clone is removed.");
-    look::dim("Ids, names and power are the board's own: the board is not opened until they are "
+    look::dim("Ids and names are the board's own: the board is not opened until they are "
               "given. Use your own ids, not the pid.codes test id.");
     draw_copy_mouse(app, device);
     ImGui::Spacing();

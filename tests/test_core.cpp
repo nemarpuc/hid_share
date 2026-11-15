@@ -1869,6 +1869,7 @@ TEST_CASE("adding a board writes the common values and keeps the ones already gi
     CHECK(mim.link_timeout_ms == 250);
     CHECK(mim.bcd_usb == 0x0200);
     CHECK(mim.language_id == 0x0409);
+    CHECK(mim.max_power_ma == 100);
     CHECK(mim.node[0].bcd_hid == 0x0111);
     // What is the board's own is left for the user or a clone.
     CHECK(mim.vendor_id == 0);

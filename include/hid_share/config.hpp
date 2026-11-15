@@ -410,8 +410,8 @@ enum class GainSource { none, typed, measured, android };
 
 // Called once when a board is added: writes into the file the values that are the same for every
 // board and target (USB 2.0, a 64-byte control endpoint, LANGID US English, HID 1.11, no country,
-// the Linux HID limits libmimusb's README uses, and this app's waits) where the file gives none.
-// A value that is already set is kept. Ids, strings, power and baud are the board's own and are
+// the Linux HID limits libmimusb's README uses, bcd_device 1.00, 100 mA, and this app's waits) where the file gives none.
+// A value that is already set is kept. Ids, strings and baud are the board's own and are
 // never written here.
 void write_board_standard(MimDevice& mim) noexcept;
 // The same for one Node's interface values; "" when all are given.
