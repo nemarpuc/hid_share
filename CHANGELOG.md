@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.8.1 - 2026-11-15
 
-- **Breaking:** builds against libmimusb 0.7 (the renamed libmimhid); libmimhid 0.2 is no longer supported. A board must run the libmimusb 0.7 firmware; the board list says when a board needs a flash.
+- **Breaking:** builds against libaoahid 0.2.1 and libmimusb 0.7.3 (libmimusb is the renamed libmimhid); libmimhid 0.2 is no longer supported. The CI and release pins name the new archives with their SHA-256. A board must run the libmimusb 0.7 firmware; the board list says when a board needs a flash.
 - A clone is opened as an interfaces Spec with its own control rules, because libmimusb checks the descriptor of a HID Spec and real devices do not all pass that check.
 - An IN endpoint of a board waits for room instead of dropping a report, so no movement is lost.
 - Adding a board writes the values every board shares into its file (USB 2.0, 64-byte endpoint 0, LANGID 0x0409, HID 1.11, device release 1.00, 100 mA, the Linux HID limits, the waits); values already there are kept. Ids, strings and baud are still yours or a clone's. Loading a file still fills nothing in.

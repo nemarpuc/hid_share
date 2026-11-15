@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(hid_share VERSION 0.8.0 LANGUAGES C CXX)
+project(hid_share VERSION 0.8.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,9 +43,9 @@ endfunction()
 
 # 2.0.0 is the first libaoahid that takes every wait as an argument of the call
 # (the vendored aoahid_adb_proxy needs it too).
-find_package(aoahid 0.2.0 CONFIG REQUIRED)
+find_package(aoahid 0.2.1 CONFIG REQUIRED)
 # The board (MIM) side; 0.7 is the line this application is written against.
-find_package(mimusb 0.7.2 CONFIG REQUIRED)
+find_package(mimusb 0.7.3 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 add_subdirectory(src)
