@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <iterator>
+#include <map>
 #include <mutex>
 
 #ifndef _WIN32
@@ -459,44 +460,8 @@ class MimPort final : public Port {
                                                 : "bcdHID");
                 return false;
             }
-            // The Input reports the descriptor declares: the Spec checks every report sent
-            // against this table, so it is read from the descriptor, not assumed.
-            std::vector<mimusb_hid_report> table;
-            for (const HidReportSize& report : nodes[i].parsed.reports) {
-                if (report.feature)
-                    continue;
-                mimusb_hid_report entry{};
-                if (nodes[i].has_ids) {
-                    entry.report_id.enabled = 1U;
-                    entry.report_id.value = report.report_id;
-                }
-                entry.wire_length = (report.bits + 7U) / 8U + (nodes[i].has_ids ? 1U : 0U);
-                table.push_back(entry);
-            }
-            mimusb_hid_options hid{};
-            mimusb_hid_options_init(&hid);
-            hid.descriptor = nodes[i].descriptor.data();
-            hid.descriptor_length = nodes[i].descriptor.size();
-            hid.reports = table.data();
-            hid.report_count = table.size();
-            // The host may send Output reports and read Feature reports of the copy.
-            hid.requires_output = 1U;
-            hid.requires_feature_response = 1U;
-            hid.function.bcd_hid = itf.bcd_hid;
-            hid.function.subclass = itf.boot_subclass;
-            hid.function.protocol = itf.boot_protocol;
-            hid.function.country_code = itf.country_code;
-            mimusb_spec* spec = nullptr;
-            if (!ok(mimusb_spec_create_hid(&hid, &spec)))
-                return false;
-            // The board numbers its interfaces without gaps, so the number is the place among
-            // those presented. The board's endpoints hold what its chip does (64 bytes at full
-            // speed); the source gives one interval for the interface, used for both endpoints.
             mimusb_node* opened = nullptr;
-            if (!open_placed(spec, static_cast<uint32_t>(i), itf.name,
-                             std::min(itf.ep_in_size, limits.max_endpoint_bytes),
-                             std::min(itf.ep_out_size, limits.max_endpoint_bytes),
-                             itf.interval_ms, limits, &opened))
+            if (!open_clone_node(i, itf, nodes[i], limits, &opened))
                 return false;
             clone_nodes_.push_back(opened);
         }
@@ -599,6 +564,7 @@ class MimPort final : public Port {
                 return false;
         }
         clone_nodes_.clear();
+        feature_rules_.clear();
         clone_.reset();
         return true;
     }
@@ -610,10 +576,21 @@ class MimPort final : public Port {
         if (out.feature) {
             if (out.bytes.size() > feature_limit_)
                 return true;
-            return ok(mimusb_node_set_feature_response(node, out.report_id, out.bytes.data(),
-                                                       out.bytes.size(), mim_.link_timeout_ms));
+            const auto rule = feature_rules_.find({out.node, out.report_id});
+            if (rule == feature_rules_.end()) {
+                error_ = "the clone has no Feature report " + std::to_string(out.report_id);
+                return false;
+            }
+            std::vector<uint8_t> data;
+            if (reports_.nodes()[out.node].has_ids)
+                data.push_back(out.report_id);
+            data.insert(data.end(), out.bytes.begin(), out.bytes.end());
+            return ok(mimusb_node_set_rule_data(node, rule->second, data.data(), data.size(),
+                                                mim_.link_timeout_ms));
         }
-        return ok(mimusb_hid_submit(node, out.bytes.data(), out.bytes.size(), mim_.link_timeout_ms));
+        return ok(mimusb_node_endpoint_write(node, static_cast<uint8_t>(0x81U + out.node),
+                                             out.bytes.data(), out.bytes.size(),
+                                             mim_.link_timeout_ms));
     }
 
     [[nodiscard]] bool send_battery() {
@@ -648,6 +625,125 @@ class MimPort final : public Port {
                     return false;
         }
         return true;
+    }
+
+    // One interface of the plugged-in device, written out as it is: its report descriptor is
+    // not checked, and the requests a HID interface takes (HID 1.11 7.1.1, 7.2) are answered by
+    // the rules below. A Feature report is answered from data set later with send().
+    [[nodiscard]] bool open_clone_node(const size_t index, const CloneInterface& itf,
+                                       const CloneReports::Node& shape,
+                                       const mimusb_board_limits& limits, mimusb_node** out) {
+        const uint8_t in_address = static_cast<uint8_t>(0x81U + index);
+        const uint8_t out_address = static_cast<uint8_t>(0x01U + index);
+        const uint16_t in_size = static_cast<uint16_t>(std::min(itf.ep_in_size, limits.max_endpoint_bytes));
+        const uint16_t out_size = static_cast<uint16_t>(std::min(itf.ep_out_size, limits.max_endpoint_bytes));
+        if (!endpoint_in_range(in_address, limits.max_endpoint_number) ||
+            (out_size > 0 && !endpoint_in_range(out_address, limits.max_endpoint_number)))
+            return false;
+
+        std::array<mimusb_usb_endpoint, 2> endpoints{};
+        endpoints[0].address = in_address;
+        endpoints[0].transfer_type = MIMUSB_TRANSFER_INTERRUPT;
+        endpoints[0].interval = static_cast<uint8_t>(itf.interval_ms);
+        endpoints[0].max_packet_size = in_size;
+        endpoints[0].policy.on_full = MIMUSB_FULL_WAIT;
+        endpoints[0].policy.depth = endpoint_queue_depth;
+        endpoints[1].address = out_address;
+        endpoints[1].transfer_type = MIMUSB_TRANSFER_INTERRUPT;
+        endpoints[1].interval = static_cast<uint8_t>(itf.interval_ms);
+        endpoints[1].max_packet_size = out_size;
+
+        const uint16_t descriptor_length = static_cast<uint16_t>(shape.descriptor.size());
+        const std::array<uint8_t, 9> hid = {
+            9, 0x21, static_cast<uint8_t>(itf.bcd_hid & 0xFFU), static_cast<uint8_t>(itf.bcd_hid >> 8),
+            itf.country_code, 1, 0x22, static_cast<uint8_t>(descriptor_length & 0xFFU),
+            static_cast<uint8_t>(descriptor_length >> 8)};
+        const std::array<mimusb_usb_item, 3> items = {
+            mimusb_usb_item_make_descriptor(hid.data(), hid.size()),
+            mimusb_usb_item_make_endpoint(endpoints[0]), mimusb_usb_item_make_endpoint(endpoints[1])};
+        const mimusb_usb_setting setting{items.data(), out_size > 0 ? size_t{3} : size_t{2}};
+        mimusb_usb_interface iface{};
+        iface.number = static_cast<uint8_t>(index);
+        iface.class_code = 0x03U; // HID
+        iface.subclass = itf.boot_subclass;
+        iface.protocol = itf.boot_protocol;
+        iface.name = itf.name.empty() ? nullptr : itf.name.c_str();
+        iface.settings = &setting;
+        iface.setting_count = 1;
+
+        std::vector<mimusb_control_rule> rules;
+        const auto rule = [&](const uint8_t type, const uint8_t request,
+                              const mimusb_control_rule_action action) {
+            mimusb_control_rule r{};
+            r.request_type_mask = 0xFF;
+            r.request_type_value = type;
+            r.request_mask = 0xFF;
+            r.request_value = request;
+            r.index_mask = 0xFFFF;
+            r.index_value = static_cast<uint16_t>(index);
+            r.action = action;
+            return r;
+        };
+        static const uint8_t idle_rate = 0;       // HID 1.11 7.2.4
+        static const uint8_t report_protocol = 1; // HID 1.11 7.2.6
+        mimusb_control_rule report = rule(0x81, 0x06, MIMUSB_CONTROL_ANSWER); // GET_DESCRIPTOR
+        report.value_mask = 0xFFFF;
+        report.value_value = 0x2200;
+        report.data = shape.descriptor.data();
+        report.length = shape.descriptor.size();
+        rules.push_back(report);
+        mimusb_control_rule set_report = rule(0x21, 0x09, MIMUSB_CONTROL_ACCEPT); // Output reports
+        set_report.value_mask = 0xFF00;
+        set_report.value_value = 0x0200;
+        rules.push_back(set_report);
+        rules.push_back(rule(0x21, 0x0A, MIMUSB_CONTROL_ACCEPT)); // SET_IDLE
+        rules.push_back(rule(0x21, 0x0B, MIMUSB_CONTROL_ACCEPT)); // SET_PROTOCOL
+        mimusb_control_rule get_idle = rule(0xA1, 0x02, MIMUSB_CONTROL_ANSWER);
+        get_idle.data = &idle_rate;
+        get_idle.length = 1;
+        rules.push_back(get_idle);
+        mimusb_control_rule get_protocol = rule(0xA1, 0x03, MIMUSB_CONTROL_ANSWER);
+        get_protocol.data = &report_protocol;
+        get_protocol.length = 1;
+        rules.push_back(get_protocol);
+        std::vector<std::vector<uint8_t>> blanks;
+        blanks.reserve(shape.parsed.reports.size());
+        for (const HidReportSize& each : shape.parsed.reports) {
+            // GET_REPORT (HID 1.11 7.2.1): an Input report is the last one sent, a Feature
+            // report is the bytes set with send(), zeros until then.
+            mimusb_control_rule get = rule(0xA1, 0x01, each.feature ? MIMUSB_CONTROL_ANSWER
+                                                                    : MIMUSB_CONTROL_ANSWER_LAST_SENT);
+            get.value_mask = 0xFFFF;
+            get.value_value = static_cast<uint16_t>((each.feature ? 0x0300U : 0x0100U) | each.report_id);
+            if (each.feature) {
+                blanks.emplace_back((each.bits + 7U) / 8U + (shape.has_ids ? 1U : 0U), uint8_t{0});
+                if (shape.has_ids)
+                    blanks.back()[0] = each.report_id;
+                get.data = blanks.back().data();
+                get.length = blanks.back().size();
+                feature_rules_[{index, each.report_id}] = rules.size();
+            } else {
+                get.endpoint_address = in_address;
+                get.first_byte_filter = shape.has_ids ? 1U : 0U;
+                get.first_byte = each.report_id;
+            }
+            rules.push_back(get);
+        }
+
+        mimusb_node_config config{};
+        mimusb_node_config_init(&config);
+        config.interfaces = &iface;
+        config.interface_count = 1;
+        config.rules = rules.data();
+        config.rule_count = rules.size();
+        mimusb_spec* spec = nullptr;
+        if (!ok(mimusb_spec_create_interfaces(&config, &spec)))
+            return false;
+        mimusb_node_placement placement;
+        mimusb_node_placement_init(&placement);
+        const mimusb_result result = mimusb_node_open(device_, spec, &placement, &waits_, out);
+        mimusb_spec_release(spec);
+        return ok(result);
     }
 
     [[nodiscard]] bool open_node(const NodeKind kind, const uint32_t interface,
@@ -754,6 +850,8 @@ class MimPort final : public Port {
     CloneRoles clone_roles_;
     CloneReports reports_;
     std::vector<mimusb_node*> clone_nodes_;
+    // The control rule that answers each Feature report of a clone: (interface, Report ID) to its number.
+    std::map<std::pair<size_t, uint8_t>, size_t> feature_rules_;
     size_t feature_limit_{};
     uint32_t battery_{};
     // What has been said since the last flush.
