@@ -58,8 +58,7 @@ mimusb_report_id_option report_id_of(const NodeUsb& usb) noexcept {
     return id;
 }
 
-// What the interface says about itself to the other computer. Boot subclass and protocol stay
-// 0: none of these Nodes is a boot device.
+// What the interface says about itself to the other computer. Boot subclass and protocol are 0.
 mimusb_hid_function function_of(const NodeUsb& usb) noexcept {
     mimusb_hid_function function{};
     function.bcd_hid = static_cast<uint16_t>(usb.bcd_hid.value_or(0U));

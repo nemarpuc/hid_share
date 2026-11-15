@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a reproducible problem with a device, a backend, the daemon or the settings window.
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Do not paste device serial numbers, ADB keys, or logs that hold real typed input.
+  - type: input
+    id: version
+    attributes:
+      label: hid_share version
+      description: Release version or commit SHA.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Exact environment
+      description: OS, desktop and backend (`x11`, `portal`, `layer_shell`, `evdev`, `windows`, `macos`); the device (phone model and Android version, or board and the machine it plugs into).
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps
+      description: What you did, and the output of `hid_share status`.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and observed behavior
+      description: Attach `daemon.log` if the daemon is involved.
+    validations:
+      required: true

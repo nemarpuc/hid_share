@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Breaking:** builds against libmimusb 0.7 (the renamed libmimhid); libmimhid 0.2 is no longer supported. A board must run the libmimusb 0.7 firmware; the board list says when a board needs a flash.
+- A clone is opened as an interfaces Spec with its own control rules, because libmimusb checks the descriptor of a HID Spec and real devices do not all pass that check.
+- An IN endpoint of a board waits for room instead of dropping a report, so no movement is lost.
+- New test `hid_share.board`, against libmimusb's simulated board (built only when libmimusb's sources and a TinyUSB checkout are given).
+- README is short; the details moved to `docs/USAGE.md`. New `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, and issue and pull request templates.
+
 ## 0.8.0 - 2026-11-10
 
 - Builds against libaoahid 0.2.0 and libmimhid 0.2.1. The CI and release pins name the new archives with their SHA-256. libaoahid 0.2.0 ships its own libusb, so the Linux and macOS packages now carry it beside the programs.
