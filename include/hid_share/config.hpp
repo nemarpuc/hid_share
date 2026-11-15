@@ -176,7 +176,8 @@ struct LinuxHidLimits {
 };
 
 // Everything a board (MIM) is opened with. A value the file does not give is stored as its "unset"
-// value (0, empty); nothing here has a default, and board_missing() names what is not given.
+// value (0, empty); loading a file fills nothing in, and board_missing() names what is not given.
+// Only adding a board writes values (write_board_standard).
 struct MimDevice {
     // The serial port, as the operating system names it. The device's serial
     // is made from it (mim_serial_of).
@@ -406,6 +407,13 @@ enum class GainSource { none, typed, measured, android };
 // order) the board is to present; `cloned`: a clone brings its own ids, strings, power values and
 // interface values, so those are not asked for.
 [[nodiscard]] std::string board_missing(const MimDevice& mim, uint8_t wanted, bool cloned);
+
+// Called once when a board is added: writes into the file the values that are the same for every
+// board and target (USB 2.0, a 64-byte control endpoint, LANGID US English, HID 1.11, no country,
+// the Linux HID limits libmimusb's README uses, and this app's waits) where the file gives none.
+// A value that is already set is kept. Ids, strings, power and baud are the board's own and are
+// never written here.
+void write_board_standard(MimDevice& mim) noexcept;
 // The same for one Node's interface values; "" when all are given.
 [[nodiscard]] std::string node_usb_missing(const NodeUsb& usb);
 

@@ -1793,6 +1793,7 @@ std::string Daemon::command(const std::string& line) {
                         // The rate the search measured, unless one is already written.
                         if (device.mim.baud == 0)
                             device.mim.baud = plugged->baud;
+                        write_board_standard(device.mim);
                     }
                     const std::string problem = validate_config(next);
                     if (!problem.empty()) {

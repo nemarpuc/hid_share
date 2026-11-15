@@ -1859,3 +1859,22 @@ TEST_CASE("a tap lands where the real cursor is, on every side") {
                 }
             }
         }
+
+TEST_CASE("adding a board writes the common values and keeps the ones already given") {
+    MimDevice mim;
+    mim.port = "/dev/ttyUSB0";
+    mim.baud = 3000000;
+    mim.link_timeout_ms = 250;
+    write_board_standard(mim);
+    CHECK(mim.link_timeout_ms == 250);
+    CHECK(mim.bcd_usb == 0x0200);
+    CHECK(mim.language_id == 0x0409);
+    CHECK(mim.node[0].bcd_hid == 0x0111);
+    // What is the board's own is left for the user or a clone.
+    CHECK(mim.vendor_id == 0);
+    CHECK(mim.product.empty());
+    const std::string list = board_missing(mim, 0b0111, false);
+    CHECK(list.find("usb.vendor_id") != std::string::npos);
+    CHECK(list.find("usb.language_id") == std::string::npos);
+    CHECK(board_missing(mim, 0b0111, true).empty());
+}

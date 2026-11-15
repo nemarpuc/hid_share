@@ -1309,6 +1309,41 @@ std::string board_missing(const MimDevice& mim, const uint8_t wanted, const bool
     return list;
 }
 
+void write_board_standard(MimDevice& mim) noexcept {
+    const auto set = [](auto& value, const auto standard) {
+        if (value == 0)
+            value = standard;
+    };
+    // The waits are this app's choice, in milliseconds.
+    set(mim.handshake_timeout_ms, 500U);
+    set(mim.link_timeout_ms, 1000U);
+    set(mim.reconnect_timeout_ms, 3000U);
+    set(mim.drain_timeout_ms, 1000U);
+    set(mim.ready_timeout_ms, 5000U);
+    // The Linux HID parser limits of libmimusb's README example.
+    set(mim.linux_hid.descriptor_bytes, 4096U);
+    set(mim.linux_hid.fields_per_report, 256U);
+    set(mim.linux_hid.global_stack_depth, 4U);
+    set(mim.linux_hid.report_size_bits, 256U);
+    set(mim.linux_hid.usages, uint64_t{12288});
+    set(mim.linux_hid.report_data_bits, uint64_t{65528});
+    set(mim.bcd_usb, uint16_t{0x0200});       // USB 2.0
+    set(mim.ep0_max_packet_size, uint16_t{64});
+    set(mim.language_id, uint16_t{0x0409});   // English (United States), USB LANGID
+    for (NodeUsb& node : mim.node) {
+        if (!node.poll_interval_ms)
+            node.poll_interval_ms = 1;
+        if (!node.ep_in_size)
+            node.ep_in_size = 64;
+        if (!node.ep_out_size)
+            node.ep_out_size = 0;
+        if (!node.bcd_hid)
+            node.bcd_hid = 0x0111; // HID 1.11
+        if (!node.country_code)
+            node.country_code = 0; // not localized
+    }
+}
+
 uint16_t adb_port_of(const Config& config, const size_t index) noexcept {
     if (index >= config.devices.size())
         return 0;
