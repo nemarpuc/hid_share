@@ -67,6 +67,8 @@ struct App {
     // What is open: the computer's page, or the page of one device, and which
     // part of each page.
     bool computer{true};
+    // With no device yet the Computer page opens on the welcome steps; true shows its settings.
+    bool settings_open{};
     size_t device{};
     int computer_tab{};
     int device_tab{static_cast<int>(DeviceTab::device)};

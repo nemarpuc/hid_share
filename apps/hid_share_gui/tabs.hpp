@@ -6,6 +6,6 @@
 
 namespace gui {
 
-enum class DeviceTab { setup, device, screen, placement, hid, keys, motion, tools, status, beta };
+enum class DeviceTab { setup, device, screen, placement, hid, keys, motion, tools, status, beta, advanced };
 
 } // namespace gui

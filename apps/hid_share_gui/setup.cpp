@@ -454,7 +454,11 @@ void draw_setup(App& app, DeviceConfig& device) {
             explain("The board shows itself to the other computer as a USB device with a name\n"
                     "and ids. One click copies them from a mouse you have plugged in here.");
             ImGui::Indent(look::px(26));
-            ImGui::TextWrapped("Not set: %s", missing.c_str());
+            if (ImGui::SmallButton("Fill in the usual values")) {
+                write_board_standard(device.mim);
+                app.dirty = true;
+            }
+            ImGui::TextWrapped("Not set: %s", board_missing(device).c_str());
             refresh_mice(app);
             if (app.mice.empty())
                 look::dim("No USB mouse or touchscreen found here (this works on Linux only).");
@@ -584,16 +588,28 @@ void draw_new_devices(App& app) {
 }
 
 void draw_getting_started(App& app) {
-    look::heading("Getting started");
+    look::heading("Welcome");
+    look::dim("Move the cursor off this screen onto a phone or a board's computer.");
 
-    step(1, "The daemon runs", app.daemon_running);
-    explain("It does the work; this window only edits what it uses. Start it with the button\n"
-            "under the list. It looks for phones and boards as it starts.");
+    step(1, "Start the daemon", app.daemon_running);
+    if (!app.daemon_running) {
+        ImGui::Indent(look::px(26));
+        if (ImGui::Button("Start the daemon"))
+            start_daemon(app);
+        ImGui::Unindent(look::px(26));
+    }
 
-    step(2, "Add a phone or a board", !app.config.devices.empty());
-    explain("What was found appears as \"+ name\"; click it to add it. Press the refresh icon\n"
-            "to look again (every serial port is asked whether a board answers). The Setup tab\n"
-            "of the device then says what is left to do.");
+    step(2, "Plug in the phone or the board", !app.fresh.empty());
+    explain("Phone: USB cable, screen unlocked. Board: its serial cable to this computer.");
+    ImGui::Indent(look::px(26));
+    ImGui::BeginDisabled(!app.daemon_running);
+    if (ImGui::Button("Search"))
+        rescan_devices(app);
+    ImGui::EndDisabled();
+    ImGui::Unindent(look::px(26));
+    draw_new_devices(app);
+
+    step(3, "Follow the steps of its Setup tab", false);
 }
 
 } // namespace gui

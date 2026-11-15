@@ -41,12 +41,23 @@ struct DeviceTabEntry {
     const char* label;
     DeviceTab id;
 };
+// What a device's page shows first; the rest is under Advanced.
 constexpr DeviceTabEntry device_tabs[] = {
-    {"Setup", DeviceTab::setup},       {"Connection", DeviceTab::device},
-    {"Measure", DeviceTab::screen},    {"Layout", DeviceTab::placement},
-    {"Inputs", DeviceTab::hid},        {"Shortcuts", DeviceTab::keys},
-    {"Pointer", DeviceTab::motion},    {"Tools", DeviceTab::tools},
-    {"Status", DeviceTab::status},     {"Beta", DeviceTab::beta}};
+    {"Setup", DeviceTab::setup},       {"Layout", DeviceTab::placement},
+    {"Shortcuts", DeviceTab::keys},    {"Status", DeviceTab::status},
+    {"Advanced", DeviceTab::advanced}, {"Beta", DeviceTab::beta}};
+constexpr DeviceTabEntry advanced_tabs[] = {
+    {"Connection", DeviceTab::device}, {"Measure", DeviceTab::screen}, {"Inputs", DeviceTab::hid},
+    {"Pointer", DeviceTab::motion},    {"Tools", DeviceTab::tools}};
+
+// The tab that holds `id`: everything under Advanced is Advanced.
+[[nodiscard]] DeviceTab top_of(const DeviceTab id) noexcept {
+    for (const DeviceTabEntry& entry : advanced_tabs) {
+        if (entry.id == id)
+            return DeviceTab::advanced;
+    }
+    return id;
+}
 
 [[nodiscard]] bool is_board(const DeviceConfig& device) noexcept {
     return device.link == LinkKind::mim;
@@ -210,8 +221,8 @@ void draw_usb_values(App& app, DeviceConfig& device) {
     if (device.clone)
         look::dim("A clone is presented: its ids, strings and power values are used instead of "
                   "the ones below, which come back when the clone is removed.");
-    look::dim("Every row here is required: nothing is filled in for a row left empty, and the "
-              "board is not opened until all are given. Use your own ids, not the pid.codes test id.");
+    look::dim("Ids, names and power are the board's own: the board is not opened until they are "
+              "given. Use your own ids, not the pid.codes test id.");
     draw_copy_mouse(app, device);
     ImGui::Spacing();
     draw_row(app, KeyScope::device, "usb", "vendor_id", &device, "Vendor id (0x0001-0xFFFF)");
@@ -388,8 +399,9 @@ void draw_beta_tab(App& app, DeviceConfig& device) {
 // The place of the remembered tab in this device's tabs: the first when it has
 // no such tab (Setup is gone once nothing is left to set).
 [[nodiscard]] size_t tab_place(const App& app, const TabList& tabs) noexcept {
+    const DeviceTab shown = top_of(static_cast<DeviceTab>(app.device_tab));
     for (size_t at = 0; at < tabs.count; ++at) {
-        if (static_cast<int>(tabs.entries[at].id) == app.device_tab)
+        if (tabs.entries[at].id == shown)
             return at;
     }
     return 0;
@@ -397,7 +409,25 @@ void draw_beta_tab(App& app, DeviceConfig& device) {
 
 void draw_device_page(App& app, DeviceConfig& device) {
     const TabList tabs = tabs_of(app, device);
-    switch (tabs.entries[tab_place(app, tabs)].id) {
+    DeviceTab shown = tabs.entries[tab_place(app, tabs)].id;
+    if (shown == DeviceTab::advanced) {
+        std::array<const char*, std::size(advanced_tabs)> names{};
+        int current = 0;
+        for (size_t each = 0; each < std::size(advanced_tabs); ++each) {
+            names[each] = advanced_tabs[each].label;
+            if (static_cast<int>(advanced_tabs[each].id) == app.device_tab)
+                current = static_cast<int>(each);
+        }
+        ImGui::PushID("advanced");
+        const int chosen = look::choose(names.data(), static_cast<int>(names.size()), current);
+        ImGui::PopID();
+        shown = advanced_tabs[static_cast<size_t>(chosen)].id;
+        app.device_tab = static_cast<int>(shown);
+        ImGui::Spacing();
+    }
+    switch (shown) {
+    case DeviceTab::advanced:
+        break;
     case DeviceTab::setup:
         draw_setup(app, device);
         break;
@@ -444,10 +474,6 @@ void draw_computer_page(App& app) {
     switch (tabs[at].id) {
     case ComputerTab::general:
         draw_new_devices(app);
-        if (app.config.devices.empty()) {
-            draw_getting_started(app);
-            ImGui::Spacing();
-        }
         draw_group(app, "General", nullptr);
         draw_row(app, KeyScope::computer, "mouse", "buttons", nullptr, "Mouse buttons");
         draw_row(app, KeyScope::computer, "mouse", "button_map", nullptr, "Button map");
@@ -515,6 +541,15 @@ void draw_main(App& app) {
         ImGui::SameLine();
         look::dim((std::string("  ") + kind_tag(device->link)).c_str());
     }
+    if (device == nullptr && app.config.devices.empty() && !app.settings_open) {
+        draw_getting_started(app);
+        ImGui::Spacing();
+        if (ImGui::SmallButton("Computer settings"))
+            app.settings_open = true;
+        return;
+    }
+    if (device == nullptr && app.config.devices.empty() && ImGui::SmallButton("Back"))
+        app.settings_open = false;
     draw_summary(app, device);
     ImGui::Spacing();
     ImGui::PushID("tabs");
@@ -525,7 +560,9 @@ void draw_main(App& app) {
             names[each] = tabs.entries[each].label;
         const int chosen = look::choose(names.data(), static_cast<int>(tabs.count),
                                         static_cast<int>(tab_place(app, tabs)));
-        app.device_tab = static_cast<int>(tabs.entries[static_cast<size_t>(chosen)].id);
+        const DeviceTab picked = tabs.entries[static_cast<size_t>(chosen)].id;
+        if (picked != top_of(static_cast<DeviceTab>(app.device_tab)))
+            app.device_tab = static_cast<int>(picked == DeviceTab::advanced ? DeviceTab::device : picked);
     } else {
         std::array<const char*, std::size(computer_tabs)> names{};
         int count = 0;
@@ -599,7 +636,13 @@ void draw_list(App& app) {
         app.computer = true;
     ImGui::Separator();
     if (!app.daemon_running) {
-        look::dim("Start the daemon to see the devices.");
+        // The devices set up before are still the user's to open and edit.
+        if (app.config.devices.empty())
+            look::dim("No device yet.");
+        for (size_t index = 0; index < app.config.devices.size(); ++index)
+            draw_device_row(app, index, true);
+        ImGui::Spacing();
+        look::dim("Start the daemon to see what is plugged in.");
         return;
     }
     const float side = ImGui::GetFrameHeight();

@@ -7,6 +7,7 @@
 - An IN endpoint of a board waits for room instead of dropping a report, so no movement is lost.
 - Adding a board writes the values every board shares into its file (USB 2.0, 64-byte endpoint 0, LANGID 0x0409, HID 1.11, the Linux HID limits, the waits); values already there are kept. Ids, strings, power and baud are still yours or a clone's. Loading a file still fills nothing in.
 - New test `hid_share.board`, against libmimusb's simulated board (built only when libmimusb's sources and a TinyUSB checkout are given).
+- Settings window: with no device it opens on a welcome with Start the daemon, Search and the boards and phones found; devices set up before are listed and editable while the daemon is off; a device's other tabs are under **Advanced**; a board file that lacks the usual values has a **Fill in the usual values** button.
 - README is short; the details moved to `docs/USAGE.md`. New `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, and issue and pull request templates.
 
 ## 0.8.0 - 2026-11-10

@@ -262,7 +262,7 @@ std::string status_of(const App& app, const DeviceConfig& device, const char* ke
 }
 
 bool has_selection(const App& app) {
-    return app.daemon_running && !app.computer && app.device < app.config.devices.size();
+    return !app.computer && app.device < app.config.devices.size();
 }
 
 // The folder this program is in, asked from the system. argv[0] would be
