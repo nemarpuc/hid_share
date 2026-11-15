@@ -199,7 +199,7 @@ constexpr ConfigKey table[] = {
      "when the board is plugged in again, or COM3. The device's serial is made from its last "
      "part, so it is set when the device is added.", true},
     {S::device, "mim", "baud", "Board", K::integer, "1..2147483647", "baud", "",
-     "The serial line rate of this board, any rate the board's UART makes (libmimhid refuses one the link does not carry). Adding "
+     "The serial line rate of this board, any rate the board's UART makes (libmimusb refuses one the link does not carry). Adding "
      "the board from the search (rescan) writes the fastest rate the search saw the board and "
      "its serial adapter carry; required."},
     {S::device, "mim", "handshake_timeout_ms", "Board", K::integer, "1..600000", "ms", "",

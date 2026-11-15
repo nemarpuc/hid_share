@@ -25,7 +25,7 @@ add_library(hid_share_output STATIC
 )
 target_include_directories(hid_share_output PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/output")
 target_link_libraries(hid_share_output PUBLIC hid_share_core hid_share_proxy
-                                                 aoahid::aoahid mimhid::mimhid Threads::Threads)
+                                                 aoahid::aoahid mimusb::mimusb Threads::Threads)
 hid_share_warnings(hid_share_output)
 
 # --- Input capture: one backend per way of taking the keyboard and mouse ---

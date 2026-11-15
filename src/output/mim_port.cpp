@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// A microcontroller board on a serial port, through libmimhid. The board
+// A microcontroller board on a serial port, through libmimusb. The board
 // presents the Nodes to its own target as one USB HID device.
 #include "hid_share/config.hpp"
 #include "port.hpp"
 
-#include <mimhid.h>
+#include <mimusb.h>
 
 #include <algorithm>
 #include <array>
@@ -20,7 +20,7 @@ namespace hids {
 namespace {
 
 // Every value below is this application's policy, stated explicitly rather
-// than left to libmimhid's documented fallbacks (docs/API.md there).
+// than left to libmimusb's documented fallbacks (docs/API.md there).
 // The search waits this long for each answer, at each rate it tries.
 // How long one serial port is given to answer the search message.
 constexpr uint32_t discover_timeout_ms = 50U;
@@ -28,15 +28,19 @@ constexpr uint32_t discover_timeout_ms = 50U;
 constexpr uint32_t drain_deadline_ms = 600U;
 constexpr uint32_t touch_contacts = 2U;
 constexpr uint32_t touch_bits = 16U;
+// A mouse report carries movement the tracker has counted, so no report may be dropped: an IN
+// endpoint waits for room (MIMUSB_FULL_WAIT) instead of discarding the newest or the oldest.
+// The queue holds this many reports (it takes one slot more of the board's pool).
+constexpr uint8_t endpoint_queue_depth = 4U;
 
 // Consumer page usages the toggle Node declares; the key map only produces
 // these. The same list and order as the phone side.
 constexpr uint16_t media_usages[] = {0x00B5, 0x00B6, 0x00B7, 0x00CD, 0x00E2, 0x00E9, 0x00EA,
                                      0x0223, 0x0224, 0x0238, 0x0201, 0x006F, 0x0070};
 
-mimhid_integer_field field(const int32_t minimum, const int32_t maximum,
+mimusb_integer_field field(const int32_t minimum, const int32_t maximum,
                            const uint32_t bits) noexcept {
-    mimhid_integer_field value{};
+    mimusb_integer_field value{};
     value.logical_minimum = minimum;
     value.logical_maximum = maximum;
     value.bit_width = bits;
@@ -44,8 +48,8 @@ mimhid_integer_field field(const int32_t minimum, const int32_t maximum,
 }
 
 // The Report ID of a Node: none unless the user gave one.
-mimhid_report_id_option report_id_of(const NodeUsb& usb) noexcept {
-    mimhid_report_id_option id{};
+mimusb_report_id_option report_id_of(const NodeUsb& usb) noexcept {
+    mimusb_report_id_option id{};
     if (usb.report_id) {
         id.enabled = 1U;
         id.value = static_cast<uint8_t>(*usb.report_id);
@@ -53,11 +57,21 @@ mimhid_report_id_option report_id_of(const NodeUsb& usb) noexcept {
     return id;
 }
 
-mimhid_result create_mouse(const unsigned buttons, const NodeUsb& usb,
-                           mimhid_spec** spec) noexcept {
-    mimhid_mouse_options options{};
+// What the interface says about itself to the other computer. Boot subclass and protocol stay
+// 0: none of these Nodes is a boot device.
+mimusb_hid_function function_of(const NodeUsb& usb) noexcept {
+    mimusb_hid_function function{};
+    function.bcd_hid = static_cast<uint16_t>(usb.bcd_hid.value_or(0U));
+    function.country_code = static_cast<uint8_t>(usb.country_code.value_or(0U));
+    return function;
+}
+
+mimusb_result create_mouse(const unsigned buttons, const NodeUsb& usb,
+                           mimusb_spec** spec) noexcept {
+    mimusb_mouse_options options{};
     options.struct_size = static_cast<uint32_t>(sizeof(options));
     options.report_id = report_id_of(usb);
+    options.function = function_of(usb);
     options.button_count = buttons;
     options.x = field(-32767, 32767, 16);
     options.y = field(-32767, 32767, 16);
@@ -65,35 +79,37 @@ mimhid_result create_mouse(const unsigned buttons, const NodeUsb& usb,
     options.wheel = field(-127, 127, 8);
     options.enable_pan = 1U;
     options.pan = field(-127, 127, 8);
-    return mimhid_spec_create_mouse(&options, spec);
+    return mimusb_spec_create_mouse(&options, spec);
 }
 
-mimhid_result create_keyboard(const NodeUsb& usb, mimhid_spec** spec) noexcept {
-    mimhid_keyboard_options options{};
+mimusb_result create_keyboard(const NodeUsb& usb, mimusb_spec** spec) noexcept {
+    mimusb_keyboard_options options{};
     options.struct_size = static_cast<uint32_t>(sizeof(options));
     options.report_id = report_id_of(usb);
+    options.function = function_of(usb);
     // Through LANG and the keypad extras; the modifiers 0xE0-0xE7 are always
     // declared by the profile.
     options.usage_minimum = 0x04;
     options.usage_maximum = 0xDD;
-    return mimhid_spec_create_keyboard(&options, spec);
+    return mimusb_spec_create_keyboard(&options, spec);
 }
 
-mimhid_result create_toggle(const NodeUsb& usb, mimhid_spec** spec) noexcept {
-    mimhid_toggle_options options{};
+mimusb_result create_toggle(const NodeUsb& usb, mimusb_spec** spec) noexcept {
+    mimusb_toggle_options options{};
     options.struct_size = static_cast<uint32_t>(sizeof(options));
     options.report_id = report_id_of(usb);
+    options.function = function_of(usb);
     options.application_page = 0x0CU;  // Consumer
     options.application_usage = 0x01U; // Consumer Control
     options.field_page = 0x0CU;
     // In media_usages order: Next, Prev, Stop, Play/Pause, Mute, Vol Up,
     // Vol Down, AC Home, AC Back, AC Pan, AC New, Brightness Up, Brightness Down.
-    static const mimhid_usage_semantic semantics[] = {
-        MIMHID_USAGE_ONE_SHOT,  MIMHID_USAGE_ONE_SHOT,          MIMHID_USAGE_ONE_SHOT,
-        MIMHID_USAGE_ONE_SHOT,  MIMHID_USAGE_ON_OFF_MAINTAINED, MIMHID_USAGE_RETRIGGER,
-        MIMHID_USAGE_RETRIGGER, MIMHID_USAGE_ONE_SHOT,          MIMHID_USAGE_ONE_SHOT,
-        MIMHID_USAGE_ONE_SHOT,  MIMHID_USAGE_SELECTOR_BITMAP,   MIMHID_USAGE_RETRIGGER,
-        MIMHID_USAGE_RETRIGGER};
+    static const mimusb_usage_semantic semantics[] = {
+        MIMUSB_USAGE_ONE_SHOT,  MIMUSB_USAGE_ONE_SHOT,          MIMUSB_USAGE_ONE_SHOT,
+        MIMUSB_USAGE_ONE_SHOT,  MIMUSB_USAGE_ON_OFF_MAINTAINED, MIMUSB_USAGE_RETRIGGER,
+        MIMUSB_USAGE_RETRIGGER, MIMUSB_USAGE_ONE_SHOT,          MIMUSB_USAGE_ONE_SHOT,
+        MIMUSB_USAGE_ONE_SHOT,  MIMUSB_USAGE_SELECTOR_BITMAP,   MIMUSB_USAGE_RETRIGGER,
+        MIMUSB_USAGE_RETRIGGER};
     static const char* types[] = {"EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY",
                                   "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_REL",
                                   "EV_KEY", "EV_KEY", "EV_KEY"};
@@ -109,27 +125,28 @@ mimhid_result create_toggle(const NodeUsb& usb, mimhid_spec** spec) noexcept {
     options.usage_semantics = semantics;
     options.expected_linux_event_types = types;
     options.expected_linux_codes = codes;
-    return mimhid_spec_create_toggle(&options, spec);
+    return mimusb_spec_create_toggle(&options, spec);
 }
 
 // Declares an optional field when its maximum is given.
 void optional_field(const std::optional<uint32_t>& maximum, const std::optional<uint32_t>& bits,
-                    uint32_t& enable, mimhid_integer_field& out) noexcept {
+                    uint32_t& enable, mimusb_integer_field& out) noexcept {
     if (!maximum)
         return;
     enable = 1U;
     out = field(0, static_cast<int32_t>(*maximum), bits.value_or(bits_to_hold(*maximum)));
 }
 
-mimhid_result create_touchscreen(const Size size, const TouchHid& hid, const NodeUsb& usb,
-                                 mimhid_spec** spec) noexcept {
+mimusb_result create_touchscreen(const Size size, const TouchHid& hid, const NodeUsb& usb,
+                                 mimusb_spec** spec) noexcept {
     const uint32_t coordinate_bits = hid.coordinate_bits.value_or(touch_bits);
     if (size.w < 1 || size.h < 1 || size.w > (1 << coordinate_bits) ||
         size.h > (1 << coordinate_bits))
-        return MIMHID_ERR_PARAM;
-    mimhid_touchscreen_options options{};
+        return MIMUSB_ERR_PARAM;
+    mimusb_touchscreen_options options{};
     options.struct_size = static_cast<uint32_t>(sizeof(options));
     options.report_id = report_id_of(usb);
+    options.function = function_of(usb);
     // Contact 0 is the click, contact 1 the scroll; one report carries both.
     options.maximum_contacts = hid.maximum_contacts.value_or(touch_contacts);
     options.contacts_per_report = hid.contacts_per_report.value_or(touch_contacts);
@@ -147,17 +164,17 @@ mimhid_result create_touchscreen(const Size size, const TouchHid& hid, const Nod
     optional_field(hid.scan_time_max, hid.scan_time_bits, options.enable_scan_time,
                    options.scan_time);
     options.scan_time_unit_100us = hid.scan_time_unit_100us.value_or(0U);
-    return mimhid_spec_create_touchscreen(&options, spec);
+    return mimusb_spec_create_touchscreen(&options, spec);
 }
 
-std::string describe(const mimhid_result result) {
-    const mimhid_error_detail* detail = mimhid_last_error();
-    // Copy the borrowed strings before mimhid_result_name() replaces them.
+std::string describe(const mimusb_result result) {
+    const mimusb_error_detail* detail = mimusb_last_error();
+    // Copy the borrowed strings before mimusb_result_name() replaces them.
     const std::string field_name =
         detail != nullptr && detail->field != nullptr ? detail->field : "no field";
     const std::string reason =
         detail != nullptr && detail->reason != nullptr ? detail->reason : "no detail";
-    return std::string(mimhid_result_name(result)) + " (" + field_name + ": " + reason + ")";
+    return std::string(mimusb_result_name(result)) + " (" + field_name + ": " + reason + ")";
 }
 
 bool port_exists(const std::string& path) {
@@ -196,7 +213,7 @@ struct Registry {
 
 class MimPort final : public Port {
   public:
-    MimPort(mimhid_device* device, std::string path, const unsigned buttons,
+    MimPort(mimusb_device* device, std::string path, const unsigned buttons,
             std::shared_ptr<Registry> registry, const MimDevice& mim)
         : device_(device),
           path_(std::move(path)),
@@ -234,7 +251,7 @@ class MimPort final : public Port {
             move_y_ += dy;
             return true;
         }
-        return ok(mimhid_mouse_move(nodes_[node_mouse], dx, dy));
+        return ok(mimusb_mouse_move(nodes_[node_mouse], dx, dy));
     }
     [[nodiscard]] bool mouse_scroll(const int32_t wheel, const int32_t pan) override {
         if (clone_) {
@@ -242,7 +259,7 @@ class MimPort final : public Port {
             move_pan_ += pan;
             return true;
         }
-        return ok(mimhid_mouse_scroll(nodes_[node_mouse], wheel, pan));
+        return ok(mimusb_mouse_scroll(nodes_[node_mouse], wheel, pan));
     }
     [[nodiscard]] bool button(const unsigned button, const bool down) override {
         if (clone_) {
@@ -253,7 +270,7 @@ class MimPort final : public Port {
             }
             return true;
         }
-        return ok(mimhid_mouse_button(nodes_[node_mouse], button, down ? 1U : 0U));
+        return ok(mimusb_mouse_button(nodes_[node_mouse], button, down ? 1U : 0U));
     }
     [[nodiscard]] bool key(const uint16_t usage, const bool down) override {
         if (clone_) {
@@ -261,14 +278,14 @@ class MimPort final : public Port {
                 queue(node_keyboard, reports_.key(static_cast<uint8_t>(usage), down));
             return true;
         }
-        return ok(mimhid_keyboard_key(nodes_[node_keyboard], usage, down ? 1U : 0U));
+        return ok(mimusb_keyboard_key(nodes_[node_keyboard], usage, down ? 1U : 0U));
     }
     [[nodiscard]] bool media(const uint16_t usage, const bool down) override {
         if (clone_) {
             queue(node_media, reports_.consumer(usage, down));
             return true;
         }
-        return ok(mimhid_toggle_usage(nodes_[node_media], usage, down ? 1U : 0U));
+        return ok(mimusb_toggle_usage(nodes_[node_media], usage, down ? 1U : 0U));
     }
     [[nodiscard]] bool touch(const unsigned contact, const bool down, const int32_t x,
                              const int32_t y) override {
@@ -276,7 +293,7 @@ class MimPort final : public Port {
             error_ = "a clone has no touchscreen";
             return false;
         }
-        return ok(mimhid_touchscreen_contact(nodes_[node_touch], contact, down ? 1U : 0U, x, y,
+        return ok(mimusb_touchscreen_contact(nodes_[node_touch], contact, down ? 1U : 0U, x, y,
                                              nullptr));
     }
 
@@ -287,13 +304,13 @@ class MimPort final : public Port {
         // the wire instead of running one after another.
         for (size_t kind = 0; kind < node_kinds; ++kind) {
             if ((nodes & node_bit(static_cast<NodeKind>(kind))) != 0 &&
-                !ok(mimhid_node_submit(nodes_[kind], mim_.link_timeout_ms)))
+                !ok(mimusb_node_submit(nodes_[kind], mim_.link_timeout_ms)))
                 return false;
         }
         for (size_t kind = 0; kind < node_kinds; ++kind) {
             // Also sends the fragments a large move or a touch frame still owes.
             if ((nodes & node_bit(static_cast<NodeKind>(kind))) != 0 &&
-                !ok(mimhid_node_submit_blocking(nodes_[kind], drain_deadline_ms)))
+                !ok(mimusb_node_submit_blocking(nodes_[kind], drain_deadline_ms)))
                 return false;
         }
         return true;
@@ -348,16 +365,16 @@ class MimPort final : public Port {
             error_ = problem;
             return false;
         }
-        mimhid_device_info info{};
-        if (!ok(mimhid_device_board_info(device_, &info)))
+        mimusb_device_info info{};
+        if (!ok(mimusb_device_board_info(device_, &info)))
             return false;
-        if (const std::string problem = interface_limit_error(used, info.max_nodes, info.max_interfaces);
+        if (const std::string problem = interface_limit_error(used, info.max_interfaces);
             !problem.empty()) {
             error_ = problem;
             return false;
         }
 
-        if (!ok(mimhid_device_batch_begin(device_)))
+        if (!ok(mimusb_device_batch_begin(device_)))
             return false;
         if (!close_nodes())
             return false;
@@ -367,9 +384,9 @@ class MimPort final : public Port {
             if (!open_node(static_cast<NodeKind>(kind), numbers[kind], options))
                 return false;
         }
-        if (!ok(mimhid_device_batch_end(device_, &waits_)))
+        if (!ok(mimusb_device_batch_end(device_, &waits_)))
             return false;
-        if (wanted != 0 && !ok(mimhid_device_wait_ready(device_, mim_.ready_timeout_ms)))
+        if (wanted != 0 && !ok(mimusb_device_wait_ready(device_, mim_.ready_timeout_ms)))
             return false;
         touch_size_ = options.touch ? options.touch_size : Size{};
         touch_hid_ = options.touch ? options.touch_hid : TouchHid{};
@@ -388,7 +405,7 @@ class MimPort final : public Port {
         CloneSnapshot shape = *options.clone;
         shape.battery = 0;
         const bool profile_open = std::any_of(nodes_.begin(), nodes_.end(),
-                                              [](const mimhid_node* n) { return n != nullptr; });
+                                              [](const mimusb_node* n) { return n != nullptr; });
         if (clone_ && !profile_open && *clone_ == shape && clone_roles_ == roles) {
             if (options.clone->battery != battery_) {
                 battery_ = options.clone->battery;
@@ -403,22 +420,21 @@ class MimPort final : public Port {
             error_ = problem;
             return false;
         }
-        mimhid_device_info info{};
-        if (!ok(mimhid_device_board_info(device_, &info)))
+        mimusb_device_info info{};
+        if (!ok(mimusb_device_board_info(device_, &info)))
             return false;
-        mimhid_board_limits limits{};
+        mimusb_board_limits limits{};
         limits.struct_size = static_cast<uint32_t>(sizeof(limits));
-        if (!ok(mimhid_device_limits(device_, &limits)))
+        if (!ok(mimusb_device_limits(device_, &limits)))
             return false;
         feature_limit_ = limits.max_feature_bytes;
         const std::vector<CloneReports::Node>& nodes = built.nodes();
         size_t bytes = 0;
         for (const CloneReports::Node& each : nodes)
             bytes += each.descriptor.size();
-        if (nodes.size() > info.max_nodes || nodes.size() > info.max_interfaces) {
+        if (nodes.size() > info.max_interfaces) {
             error_ = "the clone presents " + std::to_string(nodes.size()) +
-                     " interfaces; the board holds " +
-                     std::to_string(std::min(info.max_nodes, info.max_interfaces));
+                     " interfaces; the board holds " + std::to_string(info.max_interfaces);
             return false;
         }
         if (bytes > info.max_descriptor_bytes) {
@@ -427,7 +443,7 @@ class MimPort final : public Port {
             return false;
         }
 
-        if (!ok(mimhid_device_batch_begin(device_)))
+        if (!ok(mimusb_device_batch_begin(device_)))
             return false;
         if (!close_nodes())
             return false;
@@ -443,39 +459,50 @@ class MimPort final : public Port {
                                                 : "bcdHID");
                 return false;
             }
-            mimhid_node_config node{};
-            mimhid_node_config_init(&node);
-            // The board numbers its interfaces without gaps, so the number is the place
-            // among those presented; its endpoints are numbered the same way.
-            node.iface.number = static_cast<uint8_t>(i);
-            node.iface.class_code = 0x03U; // HID, the only class the board opens
-            node.iface.subclass = itf.boot_subclass;
-            node.iface.protocol = itf.boot_protocol;
-            node.ep_in.address = static_cast<uint8_t>(0x81 + i);
-            node.ep_in.poll_interval_ms = static_cast<uint8_t>(itf.interval_ms);
-            // The board's endpoints hold what its chip does (64 bytes at full speed).
-            node.ep_in.max_packet_size = static_cast<uint16_t>(std::min(itf.ep_in_size, limits.max_endpoint_bytes));
-            node.ep_out.address = itf.ep_out_size > 0 ? static_cast<uint8_t>(0x01 + i) : 0U;
-            node.ep_out.max_packet_size = static_cast<uint16_t>(std::min(itf.ep_out_size, limits.max_endpoint_bytes));
-            // The source device gives one interval for the interface; the OUT endpoint uses it too.
-            node.ep_out.poll_interval_ms = node.ep_out.max_packet_size > 0 ? node.ep_in.poll_interval_ms : 0U;
-            node.iface.bcd_hid = itf.bcd_hid;
-            node.iface.country_code = itf.country_code;
-            if (!endpoint_in_range(node.ep_in.address, limits.max_endpoint_number) ||
-                (node.ep_out.address != 0 &&
-                 !endpoint_in_range(node.ep_out.address, limits.max_endpoint_number)))
+            // The Input reports the descriptor declares: the Spec checks every report sent
+            // against this table, so it is read from the descriptor, not assumed.
+            std::vector<mimusb_hid_report> table;
+            for (const HidReportSize& report : nodes[i].parsed.reports) {
+                if (report.feature)
+                    continue;
+                mimusb_hid_report entry{};
+                if (nodes[i].has_ids) {
+                    entry.report_id.enabled = 1U;
+                    entry.report_id.value = report.report_id;
+                }
+                entry.wire_length = (report.bits + 7U) / 8U + (nodes[i].has_ids ? 1U : 0U);
+                table.push_back(entry);
+            }
+            mimusb_hid_options hid{};
+            mimusb_hid_options_init(&hid);
+            hid.descriptor = nodes[i].descriptor.data();
+            hid.descriptor_length = nodes[i].descriptor.size();
+            hid.reports = table.data();
+            hid.report_count = table.size();
+            // The host may send Output reports and read Feature reports of the copy.
+            hid.requires_output = 1U;
+            hid.requires_feature_response = 1U;
+            hid.function.bcd_hid = itf.bcd_hid;
+            hid.function.subclass = itf.boot_subclass;
+            hid.function.protocol = itf.boot_protocol;
+            hid.function.country_code = itf.country_code;
+            mimusb_spec* spec = nullptr;
+            if (!ok(mimusb_spec_create_hid(&hid, &spec)))
                 return false;
-            node.iface.name = itf.name.empty() ? nullptr : itf.name.c_str();
-            mimhid_node* opened = nullptr;
-            if (!ok(mimhid_node_open_raw(device_, nodes[i].descriptor.data(),
-                                         nodes[i].descriptor.size(), &node, &waits_,
-                                         &opened)))
+            // The board numbers its interfaces without gaps, so the number is the place among
+            // those presented. The board's endpoints hold what its chip does (64 bytes at full
+            // speed); the source gives one interval for the interface, used for both endpoints.
+            mimusb_node* opened = nullptr;
+            if (!open_placed(spec, static_cast<uint32_t>(i), itf.name,
+                             std::min(itf.ep_in_size, limits.max_endpoint_bytes),
+                             std::min(itf.ep_out_size, limits.max_endpoint_bytes),
+                             itf.interval_ms, limits, &opened))
                 return false;
             clone_nodes_.push_back(opened);
         }
-        if (!ok(mimhid_device_batch_end(device_, &waits_)))
+        if (!ok(mimusb_device_batch_end(device_, &waits_)))
             return false;
-        if (!nodes.empty() && !ok(mimhid_device_wait_ready(device_, mim_.ready_timeout_ms)))
+        if (!nodes.empty() && !ok(mimusb_device_wait_ready(device_, mim_.ready_timeout_ms)))
             return false;
 
         reports_ = std::move(built);
@@ -515,7 +542,7 @@ class MimPort final : public Port {
         // The first close consumes the Device and its Nodes for every result.
         if (device_ != nullptr)
             static_cast<void>(
-                mimhid_device_close(device_, mim_.link_timeout_ms, mim_.drain_timeout_ms));
+                mimusb_device_close(device_, mim_.link_timeout_ms, mim_.drain_timeout_ms));
         device_ = nullptr;
         nodes_ = {};
         clone_nodes_.clear();
@@ -525,12 +552,12 @@ class MimPort final : public Port {
 
     // The serial port going away is only learned of by asking.
     [[nodiscard]] bool healthy() override {
-        return device_ == nullptr || ok(mimhid_device_latched_error(device_));
+        return device_ == nullptr || ok(mimusb_device_latched_error(device_));
     }
 
   private:
-    [[nodiscard]] bool ok(const mimhid_result result) {
-        if (result == MIMHID_OK)
+    [[nodiscard]] bool ok(const mimusb_result result) {
+        if (result == MIMUSB_OK)
             return true;
         error_ = describe(result);
         return false;
@@ -551,22 +578,22 @@ class MimPort final : public Port {
 
     // Closes every Node, of the profiles and of a clone, inside a batch the caller opened.
     [[nodiscard]] bool close_nodes() {
-        for (mimhid_node*& node : nodes_) {
+        for (mimusb_node*& node : nodes_) {
             if (node == nullptr)
                 continue;
-            const mimhid_result closed = mimhid_node_close(node, &waits_, mim_.drain_timeout_ms);
+            const mimusb_result closed = mimusb_node_close(node, &waits_, mim_.drain_timeout_ms);
             // Every result but these consumed the Node, an error included.
-            if (closed != MIMHID_ERR_PARAM && closed != MIMHID_ERR_UNSET_FIELD)
+            if (closed != MIMUSB_ERR_PARAM && closed != MIMUSB_ERR_UNSET_FIELD)
                 node = nullptr;
             if (!ok(closed))
                 return false;
         }
-        for (mimhid_node*& node : clone_nodes_) {
+        for (mimusb_node*& node : clone_nodes_) {
             if (node == nullptr)
                 continue;
-            const mimhid_result closed = mimhid_node_close(node, &waits_, mim_.drain_timeout_ms);
+            const mimusb_result closed = mimusb_node_close(node, &waits_, mim_.drain_timeout_ms);
             // Every result but these consumed the Node, an error included.
-            if (closed != MIMHID_ERR_PARAM && closed != MIMHID_ERR_UNSET_FIELD)
+            if (closed != MIMUSB_ERR_PARAM && closed != MIMUSB_ERR_UNSET_FIELD)
                 node = nullptr;
             if (!ok(closed))
                 return false;
@@ -579,14 +606,14 @@ class MimPort final : public Port {
     // One report of the clone: an Input report goes out as it is; a Feature report is what
     // the board answers a read with, which it holds up to its max_feature_bytes of.
     [[nodiscard]] bool send(const CloneOut& out) {
-        mimhid_node* node = clone_nodes_[out.node];
+        mimusb_node* node = clone_nodes_[out.node];
         if (out.feature) {
             if (out.bytes.size() > feature_limit_)
                 return true;
-            return ok(mimhid_node_set_feature_response(node, out.report_id, out.bytes.data(),
+            return ok(mimusb_node_set_feature_response(node, out.report_id, out.bytes.data(),
                                                        out.bytes.size(), mim_.link_timeout_ms));
         }
-        return ok(mimhid_report_send(node, out.bytes.data(), out.bytes.size(), mim_.link_timeout_ms));
+        return ok(mimusb_hid_submit(node, out.bytes.data(), out.bytes.size(), mim_.link_timeout_ms));
     }
 
     [[nodiscard]] bool send_battery() {
@@ -627,8 +654,14 @@ class MimPort final : public Port {
                                  const LinkOptions& options) {
         // Each Spec is created in its own statement: as a call argument it would
         // be read before the factory beside it had filled it in.
-        mimhid_spec* spec = nullptr;
-        mimhid_result result = MIMHID_OK;
+        const NodeUsb& usb = options.node_usb[kind];
+        // Nothing is filled in for a value the user left out.
+        if (const std::string absent = node_usb_missing(usb); !absent.empty()) {
+            error_ = "not set: " + absent;
+            return false;
+        }
+        mimusb_spec* spec = nullptr;
+        mimusb_result result = MIMUSB_OK;
         switch (kind) {
         case node_mouse:
             result = create_mouse(buttons_, options.node_usb[node_mouse], &spec);
@@ -646,55 +679,71 @@ class MimPort final : public Port {
         }
         if (!ok(result))
             return false;
-        const NodeUsb& usb = options.node_usb[kind];
-        // Nothing is filled in for a value the user left out.
-        if (const std::string absent = node_usb_missing(usb); !absent.empty()) {
-            mimhid_spec_release(spec);
-            error_ = "not set: " + absent;
-            return false;
-        }
-        mimhid_node_config node{};
-        mimhid_node_config_init(&node);
-        node.iface.number = static_cast<uint8_t>(interface);
-        node.iface.class_code = 0x03U; // HID, the only class the board opens
-        // An endpoint's number follows its interface's: IN 0x81 + n, OUT 0x01 + n.
-        node.ep_in.address = static_cast<uint8_t>(0x81 + interface);
-        node.ep_in.poll_interval_ms = static_cast<uint8_t>(*usb.poll_interval_ms);
-        node.ep_in.max_packet_size = static_cast<uint16_t>(*usb.ep_in_size);
-        node.ep_out.max_packet_size = static_cast<uint16_t>(*usb.ep_out_size);
-        node.ep_out.address = node.ep_out.max_packet_size > 0 ? static_cast<uint8_t>(0x01 + interface) : 0U;
-        // An OUT endpoint polls as often as the interface's IN endpoint.
-        node.ep_out.poll_interval_ms = node.ep_out.max_packet_size > 0 ? node.ep_in.poll_interval_ms : 0U;
-        node.iface.bcd_hid = static_cast<uint16_t>(*usb.bcd_hid);
-        node.iface.country_code = static_cast<uint8_t>(*usb.country_code);
-        node.iface.name = usb.interface_name.empty() ? nullptr : usb.interface_name.c_str();
-        mimhid_board_limits board{};
+        mimusb_board_limits board{};
         board.struct_size = static_cast<uint32_t>(sizeof(board));
-        if (!ok(mimhid_device_limits(device_, &board)) ||
-            !endpoint_in_range(node.ep_in.address, board.max_endpoint_number) ||
-            (node.ep_out.address != 0 &&
-             !endpoint_in_range(node.ep_out.address, board.max_endpoint_number))) {
-            mimhid_spec_release(spec);
+        if (!ok(mimusb_device_limits(device_, &board))) {
+            mimusb_spec_release(spec);
             return false;
         }
-        result = mimhid_node_open(device_, spec, &node, &waits_, &nodes_[kind]);
-        // The Node keeps its own reference to the Spec.
-        mimhid_spec_release(spec);
-        if (!ok(result)) {
+        if (!open_placed(spec, interface, usb.interface_name, static_cast<uint32_t>(*usb.ep_in_size),
+                         static_cast<uint32_t>(*usb.ep_out_size),
+                         static_cast<uint32_t>(*usb.poll_interval_ms), board, &nodes_[kind])) {
             nodes_[kind] = nullptr;
             return false;
         }
         return true;
     }
 
-    mimhid_device* device_;
+    // Places a HID Spec on the board and opens it as a Node, then lets go of the Spec (the Node
+    // keeps its own reference). An endpoint's number follows its interface's: IN 0x81 + n,
+    // OUT 0x01 + n. A zero `out_size` means no OUT endpoint; the OUT endpoint polls as often as
+    // the IN one.
+    [[nodiscard]] bool open_placed(mimusb_spec* spec, const uint32_t interface,
+                                   const std::string& name, const uint32_t in_size,
+                                   const uint32_t out_size, const uint32_t interval_ms,
+                                   const mimusb_board_limits& board, mimusb_node** out) {
+        std::array<mimusb_placed_endpoint, 2> endpoints{};
+        endpoints[0].role = MIMUSB_ROLE_HID_IN;
+        endpoints[0].endpoint.address = static_cast<uint8_t>(0x81U + interface);
+        endpoints[0].endpoint.transfer_type = MIMUSB_TRANSFER_INTERRUPT;
+        endpoints[0].endpoint.interval = static_cast<uint8_t>(interval_ms);
+        endpoints[0].endpoint.max_packet_size = static_cast<uint16_t>(in_size);
+        endpoints[0].endpoint.policy.on_full = MIMUSB_FULL_WAIT;
+        endpoints[0].endpoint.policy.depth = endpoint_queue_depth;
+        size_t count = 1;
+        if (out_size > 0) {
+            endpoints[1].role = MIMUSB_ROLE_HID_OUT;
+            endpoints[1].endpoint.address = static_cast<uint8_t>(0x01U + interface);
+            endpoints[1].endpoint.transfer_type = MIMUSB_TRANSFER_INTERRUPT;
+            endpoints[1].endpoint.interval = static_cast<uint8_t>(interval_ms);
+            endpoints[1].endpoint.max_packet_size = static_cast<uint16_t>(out_size);
+            count = 2;
+        }
+        for (size_t i = 0; i < count; ++i) {
+            if (!endpoint_in_range(endpoints[i].endpoint.address, board.max_endpoint_number)) {
+                mimusb_spec_release(spec);
+                return false;
+            }
+        }
+        mimusb_node_placement placement;
+        mimusb_node_placement_init(&placement);
+        placement.first_interface = static_cast<uint8_t>(interface);
+        placement.name = name.empty() ? nullptr : name.c_str();
+        placement.endpoints = endpoints.data();
+        placement.endpoint_count = count;
+        const mimusb_result result = mimusb_node_open(device_, spec, &placement, &waits_, out);
+        mimusb_spec_release(spec);
+        return ok(result);
+    }
+
+    mimusb_device* device_;
     std::string path_;
     unsigned buttons_;
     std::shared_ptr<Registry> registry_;
     // What the board was opened with: its waits are the user's.
     MimDevice mim_;
-    mimhid_commit_timeouts waits_{};
-    std::array<mimhid_node*, node_kinds> nodes_{};
+    mimusb_commit_timeouts waits_{};
+    std::array<mimusb_node*, node_kinds> nodes_{};
     // The size and descriptor values the touch Node was built for.
     Size touch_size_{};
     TouchHid touch_hid_;
@@ -704,7 +753,7 @@ class MimPort final : public Port {
     std::optional<CloneSnapshot> clone_;
     CloneRoles clone_roles_;
     CloneReports reports_;
-    std::vector<mimhid_node*> clone_nodes_;
+    std::vector<mimusb_node*> clone_nodes_;
     size_t feature_limit_{};
     uint32_t battery_{};
     // What has been said since the last flush.
@@ -727,7 +776,7 @@ class MimBackend final : public Backend {
     [[nodiscard]] std::vector<TargetInfo> scan(const ScanRequest& request,
                                                std::string& error) override {
         const std::vector<std::string> held = registry_->held();
-        // libmimhid opens a port for one user at a time, so the search passes
+        // libmimusb opens a port for one user at a time, so the search passes
         // over the boards that are open here.
         if (request.probe_boards)
             probe(error);
@@ -788,24 +837,24 @@ class MimBackend final : public Backend {
             return nullptr;
         }
 
-        mimhid_device_config device{};
-        mimhid_device_config_init(&device);
+        mimusb_device_config device{};
+        mimusb_device_config_init(&device);
         device.transport.baud_rate = mim.baud;
         device.transport.handshake_timeout_ms = mim.handshake_timeout_ms;
-        // The largest report libmimhid builds. A board that holds less (a full-speed
+        // The largest report libmimusb builds. A board that holds less (a full-speed
         // chip takes 64) is asked for its limit below and opened again with it.
-        device.transport.maximum_report_bytes = MIMHID_HOST_MAX_REPORT_BYTES;
-        device.transport.linux_hid.descriptor_bytes = mim.linux_hid.descriptor_bytes;
-        device.transport.linux_hid.fields_per_report = mim.linux_hid.fields_per_report;
-        device.transport.linux_hid.global_stack_depth = mim.linux_hid.global_stack_depth;
-        device.transport.linux_hid.report_size_bits = mim.linux_hid.report_size_bits;
-        device.transport.linux_hid.usages = mim.linux_hid.usages;
-        device.transport.linux_hid.report_data_bits = mim.linux_hid.report_data_bits;
+        device.transport.maximum_report_bytes = MIMUSB_HOST_MAX_REPORT_BYTES;
+        device.target.linux_hid.descriptor_bytes = mim.linux_hid.descriptor_bytes;
+        device.target.linux_hid.fields_per_report = mim.linux_hid.fields_per_report;
+        device.target.linux_hid.global_stack_depth = mim.linux_hid.global_stack_depth;
+        device.target.linux_hid.report_size_bits = mim.linux_hid.report_size_bits;
+        device.target.linux_hid.usages = mim.linux_hid.usages;
+        device.target.linux_hid.report_data_bits = mim.linux_hid.report_data_bits;
         // The Nodes are fixed and range-checked by the profile factories.
         device.transport.validate_reports = 0U;
         // The board detaches from its target when this program closes it.
         device.transport.keep_attached = 0U;
-        device.transport.log_level = MIMHID_LOG_DISABLED;
+        device.transport.log_level = MIMUSB_LOG_DISABLED;
         device.usb_device.vendor_id = mim.vendor_id;
         device.usb_device.product_id = mim.product_id;
         device.usb_device.bcd_device = mim.bcd_device;
@@ -830,16 +879,16 @@ class MimBackend final : public Backend {
         // bMaxPower is in units of 2 mA (USB 2.0 9.6.3).
         device.usb_config.bmax_power = static_cast<uint8_t>(mim.max_power_ma / 2);
 
-        mimhid_device* opened = nullptr;
-        mimhid_result result = mimhid_device_open(path.c_str(), &device, &opened);
-        if (result == MIMHID_ERR_OVERFLOW) {
+        mimusb_device* opened = nullptr;
+        mimusb_result result = mimusb_device_open(path.c_str(), &device, &opened);
+        if (result == MIMUSB_ERR_OVERFLOW) {
             const uint32_t limit = board_report_limit(path, device, mim);
             if (limit != 0U) {
                 device.transport.maximum_report_bytes = limit;
-                result = mimhid_device_open(path.c_str(), &device, &opened);
+                result = mimusb_device_open(path.c_str(), &device, &opened);
             }
         }
-        if (result != MIMHID_OK) {
+        if (result != MIMUSB_OK) {
             error = "the board could not be opened: " + describe(result);
             return nullptr;
         }
@@ -854,23 +903,23 @@ class MimBackend final : public Backend {
 
   private:
     // The largest report the board at path takes, learned by opening it with the
-    // smallest limit; 0 when that fails too. The limit never exceeds libmimhid's.
+    // smallest limit; 0 when that fails too. The limit never exceeds libmimusb's.
     [[nodiscard]] static uint32_t board_report_limit(const std::string& path,
-                                                     mimhid_device_config config,
+                                                     mimusb_device_config config,
                                                      const MimDevice& mim) {
         config.transport.maximum_report_bytes = 1U;
-        mimhid_device* probe = nullptr;
-        if (mimhid_device_open(path.c_str(), &config, &probe) != MIMHID_OK)
+        mimusb_device* probe = nullptr;
+        if (mimusb_device_open(path.c_str(), &config, &probe) != MIMUSB_OK)
             return 0U;
-        mimhid_board_limits limits{};
+        mimusb_board_limits limits{};
         limits.struct_size = static_cast<uint32_t>(sizeof(limits));
-        const bool known = mimhid_device_limits(probe, &limits) == MIMHID_OK;
-        static_cast<void>(mimhid_device_close(probe, mim.link_timeout_ms, mim.drain_timeout_ms));
+        const bool known = mimusb_device_limits(probe, &limits) == MIMUSB_OK;
+        static_cast<void>(mimusb_device_close(probe, mim.link_timeout_ms, mim.drain_timeout_ms));
         if (!known)
             return 0U;
-        return limits.max_report_bytes < MIMHID_HOST_MAX_REPORT_BYTES
+        return limits.max_report_bytes < MIMUSB_HOST_MAX_REPORT_BYTES
                    ? limits.max_report_bytes
-                   : static_cast<uint32_t>(MIMHID_HOST_MAX_REPORT_BYTES);
+                   : static_cast<uint32_t>(MIMUSB_HOST_MAX_REPORT_BYTES);
     }
 
     struct Listed {
@@ -883,15 +932,15 @@ class MimBackend final : public Backend {
     // ones that answer.
     void probe(std::string& error) {
         found_.clear();
-        mimhid_discovery* discovery = nullptr;
-        const mimhid_result result = mimhid_discover(discover_timeout_ms, &discovery);
-        if (result != MIMHID_OK) {
+        mimusb_discovery* discovery = nullptr;
+        const mimusb_result result = mimusb_discover(discover_timeout_ms, &discovery);
+        if (result != MIMUSB_OK) {
             error = "the search for boards failed: " + describe(result);
             return;
         }
-        const size_t count = mimhid_discovery_count(discovery);
+        const size_t count = mimusb_discovery_count(discovery);
         for (size_t index = 0; index < count; ++index) {
-            const mimhid_device_info* info = mimhid_discovery_get(discovery, index);
+            const mimusb_device_info* info = mimusb_discovery_get(discovery, index);
             if (info == nullptr || info->port_name[0] == '\0')
                 continue;
             std::string text = info->description;
@@ -900,15 +949,15 @@ class MimBackend final : public Backend {
                     std::to_string(info->version_patch) + ")";
             // It answers, but cannot be opened until it is flashed again.
             if (!info->firmware_compatible) {
-                text += ": flash the libmimhid " + std::to_string(MIMHID_VERSION_MAJOR) + "." +
-                        std::to_string(MIMHID_VERSION_MINOR) + "." +
-                        std::to_string(MIMHID_VERSION_PATCH) + " firmware";
+                text += ": flash the libmimusb " + std::to_string(MIMUSB_VERSION_MAJOR) + "." +
+                        std::to_string(MIMUSB_VERSION_MINOR) + "." +
+                        std::to_string(MIMUSB_VERSION_PATCH) + " firmware";
                 found_.push_back({info->port_name, std::move(text), 0U});
                 continue;
             }
             found_.push_back({info->port_name, std::move(text), info->baud_rate});
         }
-        mimhid_discovery_destroy(discovery);
+        mimusb_discovery_destroy(discovery);
     }
 
     std::shared_ptr<Registry> registry_ = std::make_shared<Registry>();

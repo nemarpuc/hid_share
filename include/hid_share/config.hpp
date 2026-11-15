@@ -155,14 +155,14 @@ struct TouchHid {
 // Empty when the interface numbers of the Nodes that are wanted fit the board;
 // else a sentence with the board's limits.
 [[nodiscard]] std::string interface_limit_error(std::span<const uint32_t> numbers,
-                                                unsigned max_nodes, unsigned max_interfaces);
+                                                unsigned max_interfaces);
 
 // Empty when every wanted Node that shares an interface with another has a Report
 // ID, and no two of them have the same; else a sentence that names the Nodes.
 [[nodiscard]] std::string shared_interface_error(const std::array<NodeUsb, usb_nodes>& nodes,
                                                  uint8_t wanted);
 
-// The limits of the Linux HID parser of the target (libmimhid's transport.linux_hid). They are the
+// The limits of the Linux HID parser of the target (libmimusb's transport.linux_hid). They are the
 // target kernel's, so they are the user's; 0 when not set.
 struct LinuxHidLimits {
     uint32_t descriptor_bytes{};
@@ -338,7 +338,7 @@ struct Config {
 [[nodiscard]] std::string mim_serial_of(std::string_view port);
 [[nodiscard]] bool valid_name(std::string_view text) noexcept;
 
-// A string the board announces to its target. libmimhid takes UTF-8 and sends
+// A string the board announces to its target. libmimusb takes UTF-8 and sends
 // UTF-16 (USB 2.0 9.6.7: a string descriptor holds at most 126 code units), so
 // the limit is that, not a count of ASCII characters. Well-formed UTF-8, no
 // controls (C0, DEL, C1). A code point from U+10000 up takes two units.

@@ -15,7 +15,7 @@
 namespace hids {
 
 // How a target is reached: a phone over Android Open Accessory (libaoahid), or
-// a microcontroller board on a serial port (libmimhid).
+// a microcontroller board on a serial port (libmimusb).
 enum class Transport : uint8_t { aoa, mim };
 
 struct TargetInfo {

@@ -171,11 +171,11 @@ directly into the device's settings file and the daemon is reloaded.
 ## Boards
 
 A device with `link = mim` is a microcontroller board reached over its serial
-port (libmimhid). Its port and speed are in its own file (`[mim]` below). A
+port (libmimusb). Its port and speed are in its own file (`[mim]` below). A
 board that has a file is opened on the port its file names, without searching.
 Other boards are found as the daemon starts and when the user asks (`rescan`, the
 refresh icon of the settings window), and at no other time, because the search sends
-a message to every serial port that could be one, at each of libmimhid's line rates. The search measures the
+a message to every serial port that could be one, at each of libmimusb's line rates. The search measures the
 fastest rate each board's serial adapter carries, and a port in use (by this
 program or another) is passed over.
 
@@ -323,7 +323,7 @@ this section is required** (except `serial`, `serial_from_chip_id`,
 `self_powered`, `remote_wakeup` and `configuration`, which are choices with an
 honest "none"): nothing is filled in for a value left out, and a board that lacks
 one is not opened; the status and the settings window name each missing key.
-This follows libmimhid 0.2.0, whose `*_init` functions only zero a structure.
+This follows libmimusb, whose `*_init` functions only zero a structure.
 The pid.codes test id 1209:0001 is for in-house testing only and must not be on a
 device that is redistributed, sold or manufactured; it is no longer assumed, so
 give your own ids. A mouse's values can be copied from the settings window.
@@ -336,14 +336,14 @@ and those are not required; the link keys, `bcd_usb`, `ep0_max_packet_size` and
 
 | Key | |
 | --- | --- |
-| `baud` | the serial line rate of this board, any rate the board's UART makes (the RP2040 reaches 7,812,500); libmimhid refuses one the link does not carry. Adding the board from the search (`rescan`) writes the fastest rate the search saw the board and its serial adapter carry. Boards differ, so it is the board's own, not the computer's |
+| `baud` | the serial line rate of this board, any rate the board's UART makes (the RP2040 reaches 7,812,500); libmimusb refuses one the link does not carry. Adding the board from the search (`rescan`) writes the fastest rate the search saw the board and its serial adapter carry. Boards differ, so it is the board's own, not the computer's |
 | `port` | the board's serial port: `/dev/ttyUSB0`, a `/dev/serial/by-id/` path (it stays the same when the board is plugged in again) or `COM3`. The device's `serial` is `mim-` and the end of this, with anything a serial may not hold turned into `_`; a file whose serial is another is refused. It is set when the device is added and is not typed in the settings window |
 | `handshake_timeout_ms` | how long the first message of a link waits for the board's answer, 1 to 600000 |
 | `link_timeout_ms` | how long a command waits for the board's answer, and a report for its write to make progress |
 | `reconnect_timeout_ms` | how long to wait for the board's new enumeration after its Nodes change |
 | `drain_timeout_ms` | how long a close waits for the neutral reports to leave |
 | `ready_timeout_ms` | how long to wait for the target to mount the board after it re-attaches |
-| `linux_descriptor_bytes`, `linux_fields_per_report`, `linux_global_stack_depth`, `linux_report_size_bits`, `linux_usages`, `linux_report_data_bits` | the limits of the target's Linux HID parser that libmimhid checks a descriptor against (`transport.linux_hid`); they are the target kernel's, so they are yours, 1 and up |
+| `linux_descriptor_bytes`, `linux_fields_per_report`, `linux_global_stack_depth`, `linux_report_size_bits`, `linux_usages`, `linux_report_data_bits` | the limits of the target's Linux HID parser that libmimusb checks a descriptor against (`transport.linux_hid`); they are the target kernel's, so they are yours, 1 and up |
 | `vendor_id`, `product_id` | the ids the board announces to its target, 0x0001 to 0xFFFF |
 | `manufacturer`, `product` | the strings it announces, UTF-8 (any language), at most 126 characters |
 | `language_id` | the language id (LANGID) of every string it announces, 0x0001 to 0xFFFF |
@@ -358,7 +358,7 @@ and those are not required; the link keys, `bcd_usb`, `ep0_max_packet_size` and
 
 Endpoint numbers follow the interface number (IN `0x81 + n`, OUT `0x01 + n`); a
 Node whose number is above the board's highest endpoint number (reported by the
-board, and by `mimhid_board_limits.max_endpoint_number`) is refused when opened
+board, and by `mimusb_board_limits.max_endpoint_number`) is refused when opened
 instead of failing at the target's `SET_CONFIGURATION`. The same check applies to
 the endpoints of a clone.
 

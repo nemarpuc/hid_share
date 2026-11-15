@@ -572,7 +572,7 @@ bool to_node_number(const std::string_view value, const unsigned low, const unsi
 
 bool to_node_size(const std::string_view value, const bool zero_allowed,
                   std::optional<uint32_t>& out) noexcept {
-    // The full range libmimhid's descriptors take; a board takes only what its chip holds
+    // The full range libmimusb's descriptors take; a board takes only what its chip holds
     // and refuses more, at open.
     return to_node_number(value, zero_allowed ? 0 : 1, 1024, out);
 }
@@ -1217,10 +1217,7 @@ std::array<uint32_t, usb_nodes> interface_numbers(const std::array<NodeUsb, usb_
 }
 
 std::string interface_limit_error(const std::span<const uint32_t> numbers,
-                                  const unsigned max_nodes, const unsigned max_interfaces) {
-    if (numbers.size() > max_nodes)
-        return "the board holds " + std::to_string(max_nodes) + " Nodes, and " +
-               std::to_string(numbers.size()) + " are wanted";
+                                  const unsigned max_interfaces) {
     for (size_t a = 0; a < numbers.size(); ++a) {
         if (numbers[a] >= max_interfaces)
             return "the board has " + std::to_string(max_interfaces) +

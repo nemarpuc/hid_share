@@ -9,7 +9,7 @@ There are two ways to reach it, chosen per device:
 - **A board (MIM), the main way.** A small microcontroller board (a Raspberry
   Pi Pico or Pico 2) sits between this computer and the other one: this
   computer talks to it over a serial port with
-  [libmimhid](https://github.com/nemarpuc/libmimhid), and the board is a real
+  [libmimusb](https://github.com/nemarpuc/libmimusb), and the board is a real
   USB keyboard and mouse to the other machine. It works with anything that
   takes a USB keyboard and mouse (a PC, a phone with a USB host adapter, a
   machine you cannot install software on), and nothing is installed on it.
@@ -30,7 +30,7 @@ Linux (X11 and Wayland), Windows and macOS.
 
 > **Status:** the phone way is used end to end with a Galaxy Tab S11
 > (Android 16) on Arch Linux, KDE Plasma (Wayland). The board way is tested
-> against libmimhid's simulated board (a program standing in for the firmware,
+> against libmimusb's simulated board (a program standing in for the firmware,
 > on a pseudo-terminal) and has **not been run with a real board** yet. The
 > Windows and macOS backends build in CI but have not been run on real
 > hardware yet. See [What has been tested](#what-has-been-tested).
@@ -60,7 +60,7 @@ your mouse/keyboard ─▶ hid_share_daemon ─┬▶ serial ─▶ board (MIM) 
 Build first:
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/libaoahid;/path/to/libmimhid"
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/libaoahid;/path/to/libmimusb"
 cmake --build build
 build/out/hid_share_daemon &
 build/out/hid_share status
@@ -70,8 +70,9 @@ The daemon scans when it starts, for phones and for boards, but opens no device 
 itself: it only lists the ones that have a file, and what it found.
 
 **With a board (MIM).** Flash the board and wire its serial port as
-[libmimhid's quick start](https://github.com/nemarpuc/libmimhid/blob/main/docs/QUICKSTART.md)
-says (libmimhid 0.2.0 firmware), and give your user access to the serial port.
+[libmimusb's quick start](https://github.com/nemarpuc/libmimusb/blob/main/docs/QUICKSTART.md)
+says (the firmware of the same 0.7 line as the library; a board with another one is listed
+as needing a flash), and give your user access to the serial port.
 Then, in the settings window (`hid_share_gui`):
 
 1. Start the daemon (the button at the bottom left). As it starts, and again when you
@@ -280,14 +281,12 @@ shares a screen edge with your desktop's own edge features:
 
 ## What has been tested
 
-- **A board (MIM), simulated:** the daemon, the settings window and the CLI
-  against libmimhid's simulated board on a pseudo-terminal, on a virtual X
-  server with no USB device visible: connect, mouse, buttons, keys, media keys and
-  touch reach the board as reports; changing the set of inputs is one re-attach
-  and leaving it as it was is none. libmimhid 1.0.1 itself was run against a
-  real RP2040 board with its firmware (open, limits, and a 4,000,000 baud link
-  through the serial adapter). **hid_share has not been run with a real board or
-  a real target machine.** Not tested: how any game or program treats the input.
+- **A board (MIM):** hid_share was moved from libmimhid 0.2 to libmimusb 0.7 (the board
+  API changed: functions and endpoints are placed separately, and a clone is a HID Spec).
+  The move builds with warnings as errors and passes the unit tests; the board path
+  has **not been run again** against the simulated board or a real board since, and
+  earlier runs of it were against libmimhid. **hid_share has not been run with a real
+  board or a real target machine.** Not tested: how any game or program treats the input.
 - **Real device, Arch Linux:** Galaxy Tab S11, Android 16. Corner reference,
   tracking, return, re-entry at a new height and sensitivity were compared against the
   position Android itself reports and matched to within a pixel, with an earlier version
@@ -309,7 +308,7 @@ shares a screen edge with your desktop's own edge features:
 
 ## Building
 
-Requires CMake 3.22, a C++20 compiler, libaoahid 0.2 and libmimhid 0.2 (a later 0.x needs a new hid_share). On Linux each
+Requires CMake 3.22, a C++20 compiler, libaoahid 0.2 and libmimusb 0.7 (a later 0.x needs a new hid_share). On Linux each
 backend is built when its libraries are found:
 
 | Backend | Packages (Debian names) |
@@ -324,7 +323,7 @@ Dear ImGui and GLFW are downloaded at configure time for the settings window;
 `-DHID_SHARE_BUILD_GUI=OFF` leaves it out.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/libaoahid;/path/to/libmimhid"
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/libaoahid;/path/to/libmimusb"
 cmake --build build
 ctest --test-dir build
 ```
