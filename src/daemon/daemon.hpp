@@ -17,6 +17,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -184,6 +185,19 @@ class Daemon final : public CaptureHandler {
     void save_state(const std::string& key, const std::string& value);
     void publish_status();
     [[nodiscard]] std::string render_status();
+
+    // Control commands that take more than a few lines (daemon_commands.cpp).
+    // Each runs on the capture thread and gets the words after the verb.
+    [[nodiscard]] std::string reload_files();
+    [[nodiscard]] std::string rotate_command(std::istringstream& words);
+    [[nodiscard]] std::string media_command(std::istringstream& words);
+    [[nodiscard]] std::string probe_command(std::istringstream& words);
+    [[nodiscard]] std::string connect_command(std::istringstream& words);
+    [[nodiscard]] std::string disconnect_command(std::istringstream& words);
+    [[nodiscard]] std::string forget_command(std::istringstream& words);
+    // The rest of a command line, without the spaces around it.
+    [[nodiscard]] static std::string rest_of(std::istringstream& from);
+
     // Asks the device thread for a scan now.
     void request_scan();
     void wait_scanned();

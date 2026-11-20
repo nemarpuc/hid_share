@@ -122,7 +122,8 @@ target_include_directories(hid_share_control PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(hid_share_control PUBLIC hid_share_core Threads::Threads)
 hid_share_warnings(hid_share_control)
 
-add_library(hid_share_daemon_lib STATIC daemon/daemon.cpp daemon/usb_watch.cpp)
+add_library(hid_share_daemon_lib STATIC daemon/daemon.cpp daemon/daemon_commands.cpp
+                                        daemon/usb_watch.cpp)
 target_link_libraries(hid_share_daemon_lib PUBLIC hid_share_control hid_share_capture
                                                      hid_share_output)
 hid_share_warnings(hid_share_daemon_lib)
