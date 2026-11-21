@@ -46,14 +46,24 @@ aoahid_device_options device_options() noexcept {
     return options;
 }
 
-aoahid_node_options node_options() noexcept {
-    aoahid_node_options options{};
-    options.struct_size = static_cast<uint32_t>(sizeof(options));
+// Each kind of Node is a registration of its own: the phone has one HID device
+// for each, and one can come and go without the others.
+aoahid_node_placement node_placement(const NodeKind kind) noexcept {
+    aoahid_node_placement placement{};
+    placement.struct_size = static_cast<uint32_t>(sizeof(placement));
+    placement.registration = static_cast<uint32_t>(kind) + 1U;
     // One report in flight per Node; a reserved slot keeps the three Nodes
     // from competing for the pool.
-    options.has_reserved_slots = 1U;
-    options.reserved_slots = 1U;
-    return options;
+    placement.reserve_slot = 1U;
+    return placement;
+}
+
+aoahid_commit_timeouts commit_timeouts() noexcept {
+    aoahid_commit_timeouts timeouts{};
+    timeouts.struct_size = static_cast<uint32_t>(sizeof(timeouts));
+    timeouts.control_timeout_ms = control_timeout_ms;
+    timeouts.drain_timeout_ms = close_drain_timeout_ms;
+    return timeouts;
 }
 
 aoahid_integer_field field(const int32_t minimum, const int32_t maximum,
@@ -224,7 +234,7 @@ class AoaPort final : public Port {
 
     [[nodiscard]] bool set_nodes(const LinkOptions& options, uint8_t& added) override {
         added = 0;
-        const aoahid_node_options node = node_options();
+        const aoahid_commit_timeouts timeouts = commit_timeouts();
         // Each Spec is created in its own statement: as a call argument it would
         // be read before the factory beside it had filled it in.
         const auto sync = [&](const NodeKind kind, const bool wanted,
@@ -234,8 +244,7 @@ class AoaPort final : public Port {
                 return AOAHID_OK;
             if (!wanted) {
                 // Neutral reports first, then the unregister.
-                const aoahid_result closed =
-                    aoahid_node_close(slot, control_timeout_ms, close_drain_timeout_ms);
+                const aoahid_result closed = aoahid_node_close(slot, &timeouts);
                 if (node_consumed(closed))
                     slot = nullptr;
                 return closed;
@@ -244,7 +253,8 @@ class AoaPort final : public Port {
             aoahid_result result = create(&spec);
             if (result != AOAHID_OK)
                 return result;
-            result = aoahid_node_open(device_, spec, &node, control_timeout_ms, &slot);
+            const aoahid_node_placement placement = node_placement(kind);
+            result = aoahid_node_open(device_, spec, &placement, &timeouts, &slot);
             // The Node keeps its own reference to the Spec.
             aoahid_spec_release(spec);
             if (result != AOAHID_OK) {
@@ -265,8 +275,7 @@ class AoaPort final : public Port {
         if (result == AOAHID_OK && nodes_[node_touch] != nullptr && options.touch &&
             (touch_size_.w != options.touch_size.w || touch_size_.h != options.touch_size.h ||
              !(touch_hid_ == options.touch_hid))) {
-            result =
-                aoahid_node_close(nodes_[node_touch], control_timeout_ms, close_drain_timeout_ms);
+            result = aoahid_node_close(nodes_[node_touch], &timeouts);
             if (node_consumed(result))
                 nodes_[node_touch] = nullptr;
         }
