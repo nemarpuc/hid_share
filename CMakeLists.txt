@@ -43,7 +43,7 @@ endfunction()
 
 # 2.0.0 is the first libaoahid that takes every wait as an argument of the call
 # (the vendored aoahid_adb_proxy needs it too).
-find_package(aoahid 0.2.1 CONFIG REQUIRED)
+find_package(aoahid 0.2.3 CONFIG REQUIRED)
 # The board (MIM) side; 0.7 is the line this application is written against.
 find_package(mimusb 0.7.3 CONFIG REQUIRED)
 find_package(Threads REQUIRED)

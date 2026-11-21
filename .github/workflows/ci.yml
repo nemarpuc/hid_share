@@ -18,7 +18,7 @@ concurrency:
 env:
   AOAHID_REPOSITORY: nemarpuc/libaoahid
   # Changing the tag means changing the hashes in the matrix below too.
-  AOAHID_TAG: v0.2.1
+  AOAHID_TAG: v0.2.3
   MIMUSB_REPOSITORY: nemarpuc/libmimusb
   # Changing the tag means changing the hashes in the matrix below too.
   MIMUSB_TAG: v0.7.3
@@ -34,38 +34,38 @@ jobs:
           - os: ubuntu-22.04
             platform: linux
             aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04.tar.gz
-            aoahid_sha256: 1930f93d92417f9ade206c489a74cc4c078616b7e942adec7a8f743509f73b23
+            aoahid_sha256: 955fb2bf69225d03d3911cc1691a559d48d57c3dee95a97e13cf3e36b7fa1cd1
             mimusb_asset: libmimusb-*-linux-x86_64-ubuntu22.04.tar.gz
             mimusb_sha256: ab70647d816a1939b5e46201776604eba7ca1d464961647050d1c359a5c74eb2
           - os: windows-2022
             platform: windows
             aoahid_asset: libaoahid-*-windows-x86_64.zip
-            aoahid_sha256: 2ed7355c0f717d5f099d9f9ce3a4e57321643c421bb8f6dc8a8ca3133e548b90
+            aoahid_sha256: 5feaeffa7a94c08b78f8b93fef82fd572458f07c25066946ff4ff227c125c8b1
             mimusb_asset: libmimusb-*-windows-x86_64.zip
             mimusb_sha256: c0966e3ef24c3da5badf6bf909319a308d1a589082236678bcc5bbed17aa4e45
           - os: macos-15
             platform: macos
             aoahid_asset: libaoahid-*-macos-arm64.tar.gz
-            aoahid_sha256: 5f51558195d094fc5466e134258398a0f18001eee00d9100e86d894224968a92
+            aoahid_sha256: 56991f413d1eb7aec2dd46b0e539410efedbed24644a1d98d3c67e06c5ae0f01
             mimusb_asset: libmimusb-*-macos-arm64.tar.gz
             mimusb_sha256: 287b430efc3562990c484844b12e7e1b881a2861214f58c3d2595ed64dae6a1d
           - os: macos-15-intel
             platform: macos
             aoahid_asset: libaoahid-*-macos-x86_64.tar.gz
-            aoahid_sha256: d57a8453b567c8df276a71bbdf7c077222a2ea71befb764ef33deceef497104d
+            aoahid_sha256: 338a1927c81654f02aee2f8ec587a059c01e10834a66be8f0231d89224f7d7a2
             mimusb_asset: libmimusb-*-macos-x86_64.tar.gz
             mimusb_sha256: 53fe9addd47e2b4b283a65d37be1cf30566c22532c8a938e11c87334c47f7954
           - os: ubuntu-22.04-arm
             platform: linux
             aoahid_asset: libaoahid-*-linux-aarch64-ubuntu22.04.tar.gz
-            aoahid_sha256: 80a64f71f3ee5bbdc10e42c398da883964db28d967fe97c145ffd157de215abd
+            aoahid_sha256: e11ed1286b70b24c05fc7169aa4095210c425c1a8ac3856205fffb21ea18fd6d
             mimusb_asset: libmimusb-*-linux-aarch64-ubuntu22.04.tar.gz
             mimusb_sha256: 35c919974bb88549447422b402e5e6f89b898cb64729b079cd9b6b15574d2d93
           - os: windows-11-arm
             platform: windows
             cmake_arch: ARM64
             aoahid_asset: libaoahid-*-windows-arm64.zip
-            aoahid_sha256: bcc96056d242a3307bdadd63fa112237e004ea302ef4fd308a1ade4acde6f330
+            aoahid_sha256: ccf3b2cc7dd0a1c827a544c0011ffaacfe3a2488b607c8c1b053607f868bc179
             mimusb_asset: libmimusb-*-windows-arm64.zip
             mimusb_sha256: 443674f46029cd13a666e3a05645a574d5675cfdc2dcb5fcf3005d8297443cfe
     runs-on: ${{ matrix.os }}
