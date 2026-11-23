@@ -27,7 +27,7 @@ constexpr int max_slots = 8;
 static_assert(proxy_refused == AOAHID_ADB_PROXY_ERR_ARGUMENT);
 
 // Consumer page usages the toggle Node declares; the key map only produces
-// these. Same list and order as aoahid_player's media_usages.
+// these. Same list and order as android-macro-player's media_usages.
 constexpr uint16_t media_usages[] = {0x00B5, 0x00B6, 0x00B7, 0x00CD, 0x00E2, 0x00E9, 0x00EA,
                                      0x0223, 0x0224, 0x0238, 0x0201, 0x006F, 0x0070};
 

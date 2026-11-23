@@ -6,8 +6,8 @@
 #include <cstring>
 
 // The UI font, compiled in (see CMakeLists.txt).
-extern const unsigned char aoahid_player_font_data[];
-extern const unsigned int aoahid_player_font_size;
+extern const unsigned char android_macro_player_font_data[];
+extern const unsigned int android_macro_player_font_size;
 
 namespace gui::look {
 namespace {
@@ -29,8 +29,8 @@ void setup(const float scale) {
     ImGuiIO& io = ImGui::GetIO();
     ImFontConfig config;
     config.FontDataOwnedByAtlas = false;
-    io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(aoahid_player_font_data),
-                                   static_cast<int>(aoahid_player_font_size), 15.0F * scale,
+    io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(android_macro_player_font_data),
+                                   static_cast<int>(android_macro_player_font_size), 15.0F * scale,
                                    &config);
 
     ImGuiStyle& style = ImGui::GetStyle();

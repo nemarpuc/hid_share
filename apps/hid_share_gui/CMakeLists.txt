@@ -48,7 +48,7 @@ set(font_cpp "${CMAKE_CURRENT_BINARY_DIR}/embedded_font.cpp")
 add_custom_command(
   OUTPUT "${font_cpp}"
   COMMAND "${CMAKE_COMMAND}" "-DINPUT=${font_source}" "-DOUTPUT=${font_cpp}"
-          -DSYMBOL=aoahid_player_font -P "${PROJECT_SOURCE_DIR}/cmake/EmbedBinary.cmake"
+          -DSYMBOL=android_macro_player_font -P "${PROJECT_SOURCE_DIR}/cmake/EmbedBinary.cmake"
   DEPENDS "${font_source}" "${PROJECT_SOURCE_DIR}/cmake/EmbedBinary.cmake"
   COMMENT "Embedding Roboto-Medium.ttf"
   VERBATIM)
